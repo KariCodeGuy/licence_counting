@@ -589,6 +589,13 @@ if not display_df.empty:
         filtered_df['entity'] = filtered_df.apply(lambda row: 
             row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
             else row.get('company', ''), axis=1)
+    
+    # Also add entity_with_type to filtered_df for analytics
+    filtered_df['entity_type'] = filtered_df.apply(lambda row: 
+        'Partner' if pd.notna(row.get('partner')) and row.get('partner') 
+        else 'Company', axis=1)
+    filtered_df['entity_with_type'] = filtered_df.apply(lambda row: 
+        f"{row['entity']} ({row['entity_type']})", axis=1)
 
 # Show data table - editable for admins, read-only for viewers
 if can_edit:
