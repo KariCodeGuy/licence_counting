@@ -11,7 +11,7 @@ def test_get_user_count_from_portal(db_connection):
     # Test retrieval of user count from the database
     user_count_df = db_connection.get_user_count_from_portal()
     assert not user_count_df.empty, "User count DataFrame should not be empty"
-    assert 'company_name' in user_count_df.columns, "DataFrame should have 'company_name' column"
+    assert 'entity_name' in user_count_df.columns, "DataFrame should have 'entity_name' column"
     assert 'user_count' in user_count_df.columns, "DataFrame should have 'user_count' column"
 
 
@@ -22,11 +22,11 @@ def test_merge_user_count():
         'other_data': [123, 456]
     })
     user_count_df = pd.DataFrame({
-        'company_name': ['Company A', 'Company B'],
+        'entity_name': ['Company A', 'Company B'],
         'user_count': [10, 20]
     })
     
-    merged_df = main_df.merge(user_count_df, left_on='company', right_on='company_name', how='left')
+    merged_df = main_df.merge(user_count_df, left_on='company', right_on='entity_name', how='left')
     assert 'user_count' in merged_df.columns, "Merged DataFrame should have 'user_count' column"
     assert merged_df['user_count'].isnull().sum() == 0, "There should be no NaN values in 'user_count' column"
     assert merged_df['user_count'].tolist() == [10, 20], "User counts should match expected values"
@@ -55,12 +55,12 @@ def test_active_users_merge():
         'active_users': [0, 0]  # Initial values
     })
     active_users_df = pd.DataFrame({
-        'company_name': ['Company A', 'Company B'],
+        'entity_name': ['Company A', 'Company B'],
         'active_users': [5, 3]  # Real active user counts
     })
     
     # Merge as in app.py
-    merged_df = main_df.merge(active_users_df, left_on='company', right_on='company_name', how='left')
+    merged_df = main_df.merge(active_users_df, left_on='company', right_on='entity_name', how='left')
     # Apply the fix logic
     if 'active_users_y' in merged_df.columns:
         merged_df['active_users'] = merged_df['active_users_y'].fillna(0)

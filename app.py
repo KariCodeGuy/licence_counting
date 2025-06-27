@@ -100,13 +100,13 @@ def add_license_dialog():
                 st.stop()
                 
             new_start_date = st.date_input("Start Date*", value=datetime.now().date(), key="new_start_date")
-            new_licenses = st.number_input("Number of Licenses*", min_value=1, value=10, key="new_licenses")
+            new_licenses = st.number_input("Number of Licences*", min_value=1, value=10, key="new_licenses")
             
             # Currency selection
             currency_options = ["GBP", "USD", "EUR", "CAD", "AUD", "JPY", "CHF", "SEK", "NOK", "DKK"]
             new_currency = st.selectbox("Currency*", currency_options, key="new_currency")
             
-            new_cost = st.number_input(f"Cost per License ({new_currency})*", min_value=0.01, value=50.0, step=1.0, format="%.2f", key="new_cost")
+            new_cost = st.number_input(f"Cost per Licence (per year)*", min_value=0.01, value=540.0, step=1.0, format="%.2f", key="new_cost")
         
         with col2:
             new_end_date = st.date_input("End Date*", value=datetime.now().date() + timedelta(days=365), key="new_end_date")
@@ -115,9 +115,17 @@ def add_license_dialog():
             if product_code_options:
                 product_display_options = [f"{pc['code']} - {pc['label']}" for pc in product_code_options]
                 
+                # Find Subscription index for default selection
+                default_index = 0
+                for i, pc in enumerate(product_code_options):
+                    if pc['code'] == 'SUB' or 'subscription' in pc['label'].lower():
+                        default_index = i
+                        break
+                
                 selected_product_display = st.selectbox(
                     "Product Code*", 
                     product_display_options, 
+                    index=default_index,
                     key="new_product_code",
                     help="Select the type of license product"
                 )
@@ -179,7 +187,7 @@ def add_license_dialog():
                 st.rerun()
 
 # Bulk Import Dialog  
-@st.dialog("📥 Bulk Import Licenses")
+@st.dialog("📥 Bulk Import Licences")
 def bulk_import_dialog():
     st.info("Upload a CSV file with columns: company, start_date, end_date, number_of_licenses, cost_per_license, product_code, currency, status")
     st.info("💡 **Product Code**: Use 3-character codes like 'SUB', 'REL', 'ADM', 'ENT' etc. Must match existing product codes in database.")
@@ -249,7 +257,7 @@ def bulk_import_dialog():
                         st.session_state.df_data = None
                         
                         if success_count > 0:
-                            st.success(f"✅ Successfully imported {success_count} licenses!")
+                            st.success(f"✅ Successfully imported {success_count} licences!")
                         if error_count > 0:
                             st.warning(f"⚠️ {error_count} records failed to import")
                             
@@ -284,7 +292,7 @@ def delete_confirmation_dialog():
                 st.write(f"**Partner:** {license_info.get('partner', 'N/A') or 'None'}")
                 st.write(f"**Product:** {license_info.get('product_label', 'N/A')}")
             with col2:
-                st.write(f"**Licenses:** {license_info.get('number_of_licenses', 'N/A')}")
+                st.write(f"**Licences:** {license_info.get('number_of_licenses', 'N/A')}")
                 st.write(f"**Start Date:** {license_info.get('start_date', 'N/A')}")
                 st.write(f"**End Date:** {license_info.get('end_date', 'N/A')}")
             
@@ -332,7 +340,7 @@ df = st.session_state.df_data
 
 # Check if DataFrame is empty
 if df is None or df.empty:
-    st.warning("⚠️ No license data available. Add some licenses to get started!")
+    st.warning("⚠️ No license data available. Add some licences to get started!")
     df = pd.DataFrame(columns=['id', 'company', 'company_id', 'partner', 'partner_id', 'product_code', 'product_label', 'start_date', 'end_date', 
                               'number_of_licenses', 'user_count', 'active_users', 'cost_per_license', 'total_cost', 'currency', 'status'])
 else:
@@ -442,6 +450,12 @@ if not df.empty:
 if df.empty:
     filtered_df = df.copy()
 elif len(date_range) == 2:
+    # Create entity column for filtering if it doesn't exist
+    if 'entity' not in df.columns:
+        df['entity'] = df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
     base_filter = (
         (df['start_date'] >= date_range[0]) & 
         (df['start_date'] <= date_range[1]) &
@@ -453,6 +467,12 @@ elif len(date_range) == 2:
         base_filter = base_filter & (df['currency'].isin(currency_filter))
     filtered_df = df[base_filter].copy()
 else:
+    # Create entity column for filtering if it doesn't exist
+    if 'entity' not in df.columns:
+        df['entity'] = df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
     base_filter = (
         (df['entity'].isin(companies)) &
         (df['status'].isin(status_filter))
@@ -461,6 +481,19 @@ else:
     if currency_filter and 'currency' in df.columns:
         base_filter = base_filter & (df['currency'].isin(currency_filter))
     filtered_df = df[base_filter].copy()
+
+# Create unified entity column for merging with user/active user data
+if not filtered_df.empty:
+    # Ensure entity column exists and is properly populated
+    if 'entity' not in filtered_df.columns:
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    else:
+        # Update existing entity column to ensure it's correct
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
 
 # Ensure 'user_count' column exists before merging
 if 'user_count' not in filtered_df.columns:
@@ -475,7 +508,13 @@ db = DatabaseConnection()
 active_users_df = db.get_active_users_per_company()
 
 # Merge active user data with filtered_df
-if not active_users_df.empty:
+if not active_users_df.empty and not filtered_df.empty:
+    # Ensure entity column exists before merge
+    if 'entity' not in filtered_df.columns:
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
     filtered_df = filtered_df.merge(active_users_df[['entity_name', 'active_users']], left_on='entity', right_on='entity_name', how='left')
     # Use active_users_y if it exists, else fill with 0
     if 'active_users_y' in filtered_df.columns:
@@ -493,7 +532,13 @@ if not active_users_df.empty:
 user_count_df = db.get_user_count_from_portal()
 
 # Merge user count data with filtered_df
-if not user_count_df.empty:
+if not user_count_df.empty and not filtered_df.empty:
+    # Ensure entity column exists before merge
+    if 'entity' not in filtered_df.columns:
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
     filtered_df = filtered_df.merge(user_count_df[['entity_name', 'user_count']], left_on='entity', right_on='entity_name', how='left')
     # Use user_count_y if it exists, else fill with 0
     if 'user_count_y' in filtered_df.columns:
@@ -511,49 +556,36 @@ if not user_count_df.empty:
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 with col1:
-    total_licenses = filtered_df['number_of_licenses'].sum() if not filtered_df.empty else 0
-    st.metric("Total Licenses", f"{total_licenses:,}")
+    total_licences = filtered_df['number_of_licenses'].sum() if not filtered_df.empty else 0
+    st.metric("Total Licences", f"{total_licences:,}")
 
 with col2:
     total_users = int(filtered_df['user_count'].sum()) if not filtered_df.empty else 0
-    st.metric("Total Users", f"{total_users:,}", help="Number of users created under a company with a license")
+    st.metric("Total Users", f"{total_users:,}", help="Number of users created under a company or partner with a licence")
 
 with col3:
     active_users = int(filtered_df['active_users'].sum()) if not filtered_df.empty else 0
     st.metric("Active Users", f"{active_users:,}", help="Users with activity detected in the last 14 days")
 
 with col4:
-    if not filtered_df.empty and 'currency' in filtered_df.columns:
-        # Group by currency and show top currency total
-        currency_totals = filtered_df.groupby('currency')['total_cost'].sum().sort_values(ascending=False)
-        if not currency_totals.empty:
-            top_currency = currency_totals.index[0]
-            top_total = int(currency_totals.iloc[0])
-            st.metric("Total Revenue", f"{top_total:,} {top_currency}", 
-                     help=f"Showing {top_currency} total. Multiple currencies in use." if len(currency_totals) > 1 else None)
-        else:
-            st.metric("Total Revenue", "0")
-    else:
-        total_revenue = int(filtered_df['total_cost'].sum()) if not filtered_df.empty else 0
-        st.metric("Total Revenue", f"{total_revenue:,}")
+    st.info("💡 Revenue is shown separately for each currency below. No conversion is performed.")
 
 with col5:
-    active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
-    st.metric("Active Licenses", f"{active_licenses:,}")
+    active_licences = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
+    st.metric("Active Licences", f"{active_licences:,}")
 
 with col6:
     if not filtered_df.empty and 'currency' in filtered_df.columns:
-        # Show average cost in most common currency
         currency_counts = filtered_df['currency'].value_counts()
         if not currency_counts.empty:
             common_currency = currency_counts.index[0]
             avg_cost = int(filtered_df[filtered_df['currency'] == common_currency]['cost_per_license'].mean())
-            st.metric("Avg Cost/License", f"{avg_cost} {common_currency}")
+            st.metric("Avg Cost/Licence (per year)", f"{avg_cost} {common_currency}")
         else:
-            st.metric("Avg Cost/License", "0")
+            st.metric("Avg Cost/Licence (per year)", "0")
     else:
-        avg_cost_per_license = int(filtered_df['cost_per_license'].mean()) if not filtered_df.empty else 0
-        st.metric("Avg Cost/License", f"{avg_cost_per_license}")
+        avg_cost_per_licence = int(filtered_df['cost_per_license'].mean()) if not filtered_df.empty else 0
+        st.metric("Avg Cost/Licence (per year)", f"{avg_cost_per_licence}")
 
 st.markdown("---")
 
@@ -562,20 +594,23 @@ st.subheader("License Details")
 
 # Add editing tip
 if can_edit:
-    st.info("💡 **Tip**: Click any cell to edit, then use the sidebar Quick Actions to add/import licenses.")
+    st.info("💡 **Tip**: Click any cell to edit, then use the sidebar Quick Actions to add/import licences.")
 else:
     st.info("👁️ **View Only**: Contact admin for edit access. Use sidebar Quick Actions when available.")
 
 # Add utilization metrics to the table
 display_df = filtered_df.copy()
 if not display_df.empty:
+    # Ensure entity column exists in display_df
+    if 'entity' not in display_df.columns:
+        display_df['entity'] = display_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
     display_df['active_utilization_pct'] = ((display_df['active_users'] / display_df['number_of_licenses']) * 100).round(1)
     display_df['total_utilization_pct'] = ((display_df['user_count'] / display_df['number_of_licenses']) * 100).round(1)
     
-    # Create unified entity column showing company or partner name
-    display_df['entity'] = display_df.apply(lambda row: 
-        row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
-        else row.get('company', ''), axis=1)
+    # Create entity_type column for display
     display_df['entity_type'] = display_df.apply(lambda row: 
         'Partner' if pd.notna(row.get('partner')) and row.get('partner') 
         else 'Company', axis=1)
@@ -583,12 +618,6 @@ if not display_df.empty:
     # Add entity type labels to entity names for charts
     display_df['entity_with_type'] = display_df.apply(lambda row: 
         f"{row['entity']} ({row['entity_type']})", axis=1)
-    
-    # For filtering purposes, create a unified company list that includes both companies and partners
-    if 'entity' not in filtered_df.columns:
-        filtered_df['entity'] = filtered_df.apply(lambda row: 
-            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
-            else row.get('company', ''), axis=1)
     
     # Also add entity_with_type to filtered_df for analytics
     filtered_df['entity_type'] = filtered_df.apply(lambda row: 
@@ -619,18 +648,18 @@ if can_edit:
             'product_label': st.column_config.TextColumn('Product Type', disabled=True, width="medium"),  # Read-only (FK relationship)
             'start_date': st.column_config.DateColumn('Start Date', required=True),
             'end_date': st.column_config.DateColumn('End Date', required=True),
-            'number_of_licenses': st.column_config.NumberColumn('Licenses', min_value=1, required=True, width="small"),
+            'number_of_licenses': st.column_config.NumberColumn('Licences', min_value=1, required=True, width="small"),
             'user_count': st.column_config.NumberColumn('Total Users', disabled=True, width="small"),  # Calculated field
             'active_users': st.column_config.NumberColumn('Active Users', disabled=True, width="small"),  # Calculated field
             'active_utilization_pct': st.column_config.ProgressColumn(
                 'Active Utilization %',
-                help='Percentage of licenses being actively used (calculated field)',
+                help='Percentage of licences being actively used (calculated field)',
                 min_value=0,
                 max_value=150,
                 format='%.1f%%',
                 width="medium"
             ),
-            'cost_per_license': st.column_config.NumberColumn('Cost/License', min_value=0.01, format='%.2f', required=True),
+            'cost_per_license': st.column_config.NumberColumn('Cost/Licence (per year)', min_value=0.01, format='%.2f', required=True),
             'total_cost': st.column_config.NumberColumn('Total Cost', disabled=True, format='%.2f'),  # Calculated field
             'currency': st.column_config.SelectboxColumn('Currency', options=['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK'], required=True, width="small"),
             'status': st.column_config.SelectboxColumn('Status', options=['Active', 'Expired'], required=True, width="small")
@@ -674,9 +703,9 @@ if can_edit:
                     if changes:
                         # Calculate new total_cost if relevant fields changed
                         if 'number_of_licenses' in changes or 'cost_per_license' in changes:
-                            licenses = changes.get('number_of_licenses', edited_df.loc[idx, 'number_of_licenses'])
+                            licences = changes.get('number_of_licenses', edited_df.loc[idx, 'number_of_licenses'])
                             cost_per = changes.get('cost_per_license', edited_df.loc[idx, 'cost_per_license'])
-                            changes['total_cost'] = licenses * cost_per
+                            changes['total_cost'] = licences * cost_per
                         
                         if db.update_license(license_id, changes):
                             changes_saved += 1
@@ -699,6 +728,11 @@ if can_edit:
         # Create a simple delete interface
         delete_col1, delete_col2 = st.columns([3, 1])
         
+        # Initialize selected_delete variable
+        selected_delete = None
+        license_id = None
+        entity_name = None
+        
         with delete_col1:
             if not display_df.empty:
                 # Create options for deletion
@@ -707,8 +741,8 @@ if can_edit:
                     entity_name = row.get('entity', 'Unknown')
                     entity_type = row.get('entity_type', 'Unknown')
                     product = row.get('product_label', 'Unknown')
-                    licenses = row.get('number_of_licenses', 0)
-                    delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licenses} licenses")
+                    licences = row.get('number_of_licenses', 0)
+                    delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licences} licences")
                 
                 selected_delete = st.selectbox(
                     "Select license to delete:",
@@ -725,7 +759,7 @@ if can_edit:
                     entity_name = selected_row.get('entity', 'Unknown')
                     
                     st.warning(f"⚠️ You are about to delete license for **{entity_name}**")
-                    st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licenses")
+                    st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licences")
         
         with delete_col2:
             if selected_delete and st.button("🗑️ Delete", type="secondary", use_container_width=True):
@@ -762,18 +796,18 @@ else:
             'product_label': st.column_config.TextColumn('Product Type', width="medium"),
             'start_date': st.column_config.DateColumn('Start Date'),
             'end_date': st.column_config.DateColumn('End Date'),
-            'number_of_licenses': st.column_config.NumberColumn('Licenses', width="small"),
+            'number_of_licenses': st.column_config.NumberColumn('Licences', width="small"),
             'user_count': st.column_config.NumberColumn('Total Users', width="small"),
             'active_users': st.column_config.NumberColumn('Active Users', width="small"),
             'active_utilization_pct': st.column_config.ProgressColumn(
                 'Active Utilization %',
-                help='Percentage of licenses being actively used',
+                help='Percentage of licences being actively used',
                 min_value=0,
                 max_value=150,
                 format='%.1f%%',
                 width="medium"
             ),
-            'cost_per_license': st.column_config.NumberColumn('Cost/License', format='%.2f'),
+            'cost_per_license': st.column_config.NumberColumn('Cost/Licence (per year)', format='%.2f'),
             'total_cost': st.column_config.NumberColumn('Total Cost', format='%.2f'),
             'currency': st.column_config.TextColumn('Currency', width="small"),
             'status': st.column_config.TextColumn('Status', width="small")
@@ -794,7 +828,7 @@ if not filtered_df.empty:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Licenses vs Active Users")
+        st.subheader("Licences vs Active Users")
         # Focus on non-monetary metrics to avoid currency mixing
         company_summary = filtered_df.groupby('entity_with_type').agg({
             'number_of_licenses': 'sum',
@@ -813,8 +847,8 @@ if not filtered_df.empty:
                 size='number_of_licenses',  # Use license count instead of revenue for sizing
                 hover_name='entity_with_type',
                 hover_data={'user_count': True},
-                title="Licenses vs Active Users (bubble size = total licenses)",
-                labels={'number_of_licenses': 'Number of Licenses', 'active_users': 'Active Users'}
+                title="Licences vs Active Users (bubble size = total licences)",
+                labels={'number_of_licenses': 'Number of Licences', 'active_users': 'Active Users'}
             )
             # Add diagonal line for 100% utilization
             max_val = max(top_companies['number_of_licenses'].max(), top_companies['active_users'].max())
@@ -863,7 +897,7 @@ if not filtered_df.empty:
                 st.info("📊 No data available for revenue chart")
         else:
             # Fallback for data without currency column
-            company_summary_with_revenue = filtered_df.groupby('company').agg({
+            company_summary_with_revenue = filtered_df.groupby('entity_with_type').agg({
                 'total_cost': 'sum'
             }).reset_index()
             top_revenue_companies = company_summary_with_revenue.nlargest(10, 'total_cost')
@@ -871,10 +905,10 @@ if not filtered_df.empty:
             if not top_revenue_companies.empty:
                 fig_bar = px.bar(
                     top_revenue_companies,
-                    x='company',
+                    x='entity_with_type',
                     y='total_cost',
-                    title="Top 10 Companies by Revenue",
-                    labels={'total_cost': 'Revenue', 'company': 'Company'}
+                    title="Top 10 Entities by Revenue",
+                    labels={'total_cost': 'Revenue', 'entity_with_type': 'Entity'}
                 )
                 fig_bar.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -914,8 +948,8 @@ if not filtered_df.empty:
             column_config={
                 'currency': st.column_config.TextColumn('Currency'),
                 'total_cost': st.column_config.NumberColumn('Total Revenue', format='%.2f'),
-                'number_of_licenses': st.column_config.NumberColumn('Total Licenses'),
-                'cost_per_license': st.column_config.NumberColumn('Avg Cost/License', format='%.2f')
+                'number_of_licenses': st.column_config.NumberColumn('Total Licences'),
+                'cost_per_license': st.column_config.NumberColumn('Avg Cost/Licence (per year)', format='%.2f')
             }
         )
 
@@ -949,26 +983,26 @@ if not filtered_df.empty:
 
     with col2:
         # User vs License comparison chart
-        company_util = utilization_df.groupby('company').agg({
+        company_util = utilization_df.groupby('entity_with_type').agg({
             'user_count': 'sum',
             'active_users': 'sum',
             'number_of_licenses': 'sum'
         }).reset_index()
         
-        # Show top 10 companies by total user count
+        # Show top 10 entities by total user count
         top_user_companies = company_util.nlargest(10, 'user_count')
         
         if not top_user_companies.empty:
             # Create grouped bar chart using plotly.graph_objects
             fig_grouped = go.Figure()
             
-            # Add licenses bar (baseline)
+            # Add licences bar (baseline)
             fig_grouped.add_trace(go.Bar(
-                name='Licenses Available',
-                x=top_user_companies['company'],
+                name='Licences Available',
+                x=top_user_companies['entity_with_type'],
                 y=top_user_companies['number_of_licenses'],
-                marker_color='#87CEEB',  # Light blue for licenses
-                hovertemplate='<b>%{x}</b><br>Licenses: %{y}<extra></extra>',
+                marker_color='#87CEEB',  # Light blue for licences
+                hovertemplate='<b>%{x}</b><br>Licences: %{y}<extra></extra>',
                 opacity=0.8
             ))
             
@@ -976,13 +1010,13 @@ if not filtered_df.empty:
             total_user_colors = []
             for _, row in top_user_companies.iterrows():
                 if row['user_count'] > row['number_of_licenses']:
-                    total_user_colors.append('#DC143C')  # Red if exceeding licenses
+                    total_user_colors.append('#DC143C')  # Red if exceeding licences
                 else:
                     total_user_colors.append('#FFD700')  # Yellow if within limits
             
             fig_grouped.add_trace(go.Bar(
                 name='Total Users',
-                x=top_user_companies['company'],
+                x=top_user_companies['entity_with_type'],
                 y=top_user_companies['user_count'],
                 marker_color=total_user_colors,
                 hovertemplate='<b>%{x}</b><br>Total Users: %{y}<extra></extra>',
@@ -992,7 +1026,7 @@ if not filtered_df.empty:
             # Add active users bar
             fig_grouped.add_trace(go.Bar(
                 name='Active Users',
-                x=top_user_companies['company'],
+                x=top_user_companies['entity_with_type'],
                 y=top_user_companies['active_users'],
                 marker_color='#2E8B57',  # Green for active users
                 hovertemplate='<b>%{x}</b><br>Active Users: %{y}<extra></extra>'
@@ -1000,8 +1034,8 @@ if not filtered_df.empty:
             
             # Update layout for grouped bars
             fig_grouped.update_layout(
-                title="License Usage vs User Count by Company",
-                xaxis_title="Company",
+                title="License Usage vs User Count by Entity",
+                xaxis_title="Entity",
                 yaxis_title="Count",
                 barmode='group',
                 hovermode='closest',
@@ -1015,11 +1049,11 @@ if not filtered_df.empty:
                 )
             )
             
-            # Add annotations for companies exceeding licenses
+            # Add annotations for entities exceeding licences
             for i, row in top_user_companies.iterrows():
                 if row['user_count'] > row['number_of_licenses']:
                     fig_grouped.add_annotation(
-                        x=row['company'],
+                        x=row['entity_with_type'],
                         y=row['user_count'] + 5,
                         text="⚠️ OVER LIMIT",
                         showarrow=True,
@@ -1035,13 +1069,13 @@ if not filtered_df.empty:
             
             st.plotly_chart(fig_grouped, use_container_width=True)
             
-            # Add summary alert for over-limit companies
+            # Add summary alert for over-limit entities
             over_limit_companies = top_user_companies[top_user_companies['user_count'] > top_user_companies['number_of_licenses']]
             if not over_limit_companies.empty:
                 st.error("🚨 **LICENSE LIMIT EXCEEDED** 🚨")
                 for _, company in over_limit_companies.iterrows():
                     excess = company['user_count'] - company['number_of_licenses']
-                    st.error(f"**{company['company']}**: {company['user_count']} users vs {company['number_of_licenses']} licenses (⚠️ {excess} over limit)")
+                    st.error(f"**{company['entity_with_type']}**: {company['user_count']} users vs {company['number_of_licenses']} licences (⚠️ {excess} over limit)")
             
         else:
             st.info("📊 No data available for user activity chart")
