@@ -15,10 +15,10 @@ class AuthManager:
     def authenticate_user(self, username, password):
         """Simple authentication against .env file credentials"""
         # Get credentials from environment variables
-        admin_user = os.getenv('ADMIN_USERNAME', 'admin')
-        admin_pass = os.getenv('ADMIN_PASSWORD', 'admin123')
-        viewer_user = os.getenv('VIEWER_USERNAME', 'viewer')
-        viewer_pass = os.getenv('VIEWER_PASSWORD', 'viewer123')
+        admin_user = st.secrets["auth"]["admin_username"]
+        admin_pass = st.secrets["auth"]["admin_password"]
+        viewer_user = st.secrets["auth"]["viewer_username"]
+        viewer_pass = st.secrets["auth"]["viewer_password"]
         
         # Debug mode removed for security
         

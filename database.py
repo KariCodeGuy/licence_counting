@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import datetime
 from sqlalchemy.orm import sessionmaker
 from models import engine, LicenseRecord, Company, Partner, LicenseProductCode, UserPortal, LoggerSession
+import streamlit as st
 
 # Load environment variables
 load_dotenv()
@@ -16,11 +17,11 @@ class DatabaseConnection:
     """Database connection handler for MySQL"""
     
     def __init__(self):
-        self.host = os.getenv('DB_HOST', 'localhost')
-        self.user = os.getenv('DB_USER', 'your_username')
-        self.password = os.getenv('DB_PASSWORD', 'your_password')
-        self.database = os.getenv('DB_NAME', 'license_db')
-        self.port = int(os.getenv('DB_PORT', '3306'))
+        self.host = st.secrets["database"]["host"]
+        self.user = st.secrets["database"]["user"]
+        self.password = st.secrets["database"]["password"]
+        self.database = st.secrets["database"]["name"]
+        self.port = int(st.secrets["database"].get("port", 3306))
         self.session = Session()
         
     def get_connection(self):

@@ -2,12 +2,14 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, Float, Fore
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
+import streamlit as st
 
 # Load environment variables
-DB_HOST = os.getenv('DB_HOST')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-DB_NAME = os.getenv('DB_NAME')
+DB_HOST = st.secrets["database"]["host"]
+DB_USER = st.secrets["database"]["user"]
+DB_PASSWORD = st.secrets["database"]["password"]
+DB_NAME = st.secrets["database"]["name"]
+DB_PORT = st.secrets["database"].get("port", 3306)
 
 # Create SQLAlchemy engine
 engine = create_engine(f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}')
