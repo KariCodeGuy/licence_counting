@@ -702,47 +702,9 @@ if can_edit:
                 st.info("ℹ️ No changes detected to save.")
     with col_delete:
         if st.button("🗑️ Delete Licences", type="secondary"):
-            st.session_state.show_delete_popup = True
-    if st.session_state.get("show_delete_popup", False):
-        with st.popover("Delete Licences", use_container_width=True):
-            st.subheader("🗑️ Delete Licence")
-            if not display_df.empty:
-                delete_options = []
-                for idx, row in display_df.iterrows():
-                    entity_name = row.get('entity', 'Unknown')
-                    entity_type = row.get('entity_type', 'Unknown')
-                    product = row.get('product_label', 'Unknown')
-                    licences = row.get('number_of_licenses', 0)
-                    delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licences} licences")
-                selected_delete = st.selectbox(
-                    "Select licence to delete:",
-                    options=delete_options,
-                    key="delete_selector_popup",
-                    help="Choose the licence you want to delete"
-                )
-                if selected_delete:
-                    selected_index = delete_options.index(selected_delete)
-                    selected_row = display_df.iloc[selected_index]
-                    licence_id = selected_row.get('id')
-                    entity_name = selected_row.get('entity', 'Unknown')
-                    st.warning(f"⚠️ You are about to delete licence for **{entity_name}**")
-                    st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licences")
-                    if st.button("🗑️ Confirm Delete", type="primary"):
-                        db = DatabaseConnection()
-                        if db.delete_license(licence_id):
-                            st.success(f"✅ Licence for {entity_name} deleted successfully!")
-                            load_license_data.clear()
-                            st.session_state.df_data = None
-                            st.session_state.original_df = None
-                            st.session_state.show_delete_popup = False
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to delete licence. Please try again.")
-                    if st.button("❌ Cancel", type="secondary"):
-                        st.session_state.show_delete_popup = False
-                        st.rerun()
-            else:
-                st.info("No licences available to delete.")
+            st.session_state.show_delete_modal = True
+    if st.session_state.get("show_delete_modal", False):
+        delete_licence_dialog()
 
 else:
     # Read-only view for viewers - show comprehensive data
@@ -1046,4 +1008,49 @@ if not filtered_df.empty:
             st.info("📊 No data available for user activity chart")
 
 else:
-    st.info("📊 No data available for charts. Add some license records to see visualizations.") 
+    st.info("📊 No data available for charts. Add some license records to see visualizations.")
+
+# --- Modal dialog for deleting licences ---
+@st.dialog("🗑️ Delete Licence")
+def delete_licence_dialog():
+    st.subheader("🗑️ Delete Licence")
+    if not display_df.empty:
+        delete_options = []
+        for idx, row in display_df.iterrows():
+            entity_name = row.get('entity', 'Unknown')
+            entity_type = row.get('entity_type', 'Unknown')
+            product = row.get('product_label', 'Unknown')
+            licences = row.get('number_of_licenses', 0)
+            delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licences} licences")
+        selected_delete = st.selectbox(
+            "Select licence to delete:",
+            options=delete_options,
+            key="delete_selector_modal",
+            help="Choose the licence you want to delete"
+        )
+        if selected_delete:
+            selected_index = delete_options.index(selected_delete)
+            selected_row = display_df.iloc[selected_index]
+            licence_id = selected_row.get('id')
+            entity_name = selected_row.get('entity', 'Unknown')
+            st.warning(f"⚠️ You are about to delete licence for **{entity_name}**")
+            st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licences")
+            col_confirm, col_cancel = st.columns(2)
+            with col_confirm:
+                if st.button("🗑️ Confirm Delete", type="primary", key="confirm_delete_modal"):
+                    db = DatabaseConnection()
+                    if db.delete_license(licence_id):
+                        st.success(f"✅ Licence for {entity_name} deleted successfully!")
+                        load_license_data.clear()
+                        st.session_state.df_data = None
+                        st.session_state.original_df = None
+                        st.session_state.show_delete_modal = False
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to delete licence. Please try again.")
+            with col_cancel:
+                if st.button("❌ Cancel", type="secondary", key="cancel_delete_modal"):
+                    st.session_state.show_delete_modal = False
+                    st.rerun()
+    else:
+        st.info("No licences available to delete.") 
