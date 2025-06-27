@@ -385,13 +385,21 @@ with st.sidebar:
             value=(default_start, default_end)
         )
 
-        # Company filter
-        company_options = sorted(df['company'].dropna().unique()) if not df.empty else []
-        companies = st.multiselect(
-            "Companies",
-            options=company_options,
-            default=company_options
-        )
+        # Company filter - include both companies and partners
+        if not df.empty:
+            # Create entity column for filtering if it doesn't exist
+            if 'entity' not in df.columns:
+                df['entity'] = df.apply(lambda row: 
+                    row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+                    else row.get('company', ''), axis=1)
+            
+            entity_options = sorted(df['entity'].dropna().unique()) if not df.empty else []
+            companies = st.multiselect(
+                "Companies/Partners",
+                options=entity_options,
+                default=entity_options,
+                help="Filter by companies or partners"
+            )
 
         # Status filter
         status_options = df['status'].unique().tolist() if not df.empty else ['Active', 'Expired']
@@ -437,7 +445,7 @@ elif len(date_range) == 2:
     base_filter = (
         (df['start_date'] >= date_range[0]) & 
         (df['start_date'] <= date_range[1]) &
-        (df['company'].isin(companies)) &
+        (df['entity'].isin(companies)) &
         (df['status'].isin(status_filter))
     )
     # Add currency filter if available
@@ -446,7 +454,7 @@ elif len(date_range) == 2:
     filtered_df = df[base_filter].copy()
 else:
     base_filter = (
-        (df['company'].isin(companies)) &
+        (df['entity'].isin(companies)) &
         (df['status'].isin(status_filter))
     )
     # Add currency filter if available
@@ -571,6 +579,12 @@ if not display_df.empty:
     display_df['entity_type'] = display_df.apply(lambda row: 
         'Partner' if pd.notna(row.get('partner')) and row.get('partner') 
         else 'Company', axis=1)
+    
+    # For filtering purposes, create a unified company list that includes both companies and partners
+    if 'entity' not in filtered_df.columns:
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
 
 # Show data table - editable for admins, read-only for viewers
 if can_edit:
@@ -717,13 +731,13 @@ if not filtered_df.empty:
     with col1:
         st.subheader("Licenses vs Active Users")
         # Focus on non-monetary metrics to avoid currency mixing
-        company_summary = filtered_df.groupby('company').agg({
+        company_summary = filtered_df.groupby('entity').agg({
             'number_of_licenses': 'sum',
             'user_count': 'sum',
             'active_users': 'sum'
         }).reset_index()
         
-        # Show top 10 companies by license count
+        # Show top 10 entities by license count
         top_companies = company_summary.nlargest(10, 'number_of_licenses') if not company_summary.empty else pd.DataFrame()
         
         if not top_companies.empty:
@@ -732,7 +746,7 @@ if not filtered_df.empty:
                 x='number_of_licenses',
                 y='active_users',
                 size='number_of_licenses',  # Use license count instead of revenue for sizing
-                hover_name='company',
+                hover_name='entity',
                 hover_data={'user_count': True},
                 title="Licenses vs Active Users (bubble size = total licenses)",
                 labels={'number_of_licenses': 'Number of Licenses', 'active_users': 'Active Users'}
@@ -811,9 +825,9 @@ if not filtered_df.empty:
         timeline_df,
         x_start='start_date',
         x_end='end_date',
-        y='company',
+        y='entity',
         color='status',
-        title="License Duration by Company",
+        title="License Duration by Entity",
         hover_data=['number_of_licenses', 'user_count', 'active_users', 'total_cost', 'cost_per_license']
     )
     fig_timeline.update_yaxes(categoryorder="total ascending")

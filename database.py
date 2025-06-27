@@ -65,7 +65,7 @@ class DatabaseConnection:
                     row['company'] = company_name
                     row['partner'] = None
                 elif partner_name:
-                    row['company'] = partner_name  # Use partner name as company for display
+                    row['company'] = None  # Leave company empty for partner licenses
                     row['partner'] = partner_name
                 else:
                     row['company'] = 'Unknown'
