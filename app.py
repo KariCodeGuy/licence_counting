@@ -89,31 +89,12 @@ def add_license_dialog():
                     new_partner = None
                     entity_name = new_company
                 else:  # partner
-                    # For partners, we need to also select which company this license is for
+                    # For partners, only set partner_id, leave company_id as None
+                    new_company_id = None
                     new_partner_id = selected_entity['id']
+                    new_company = None
                     new_partner = selected_entity['name']
-                    
-                    # Show company selection for partner licenses
-                    companies_only = [e for e in entity_options if e['type'] == 'company']
-                    if companies_only:
-                        st.info(f"🤝 Partner selected: **{new_partner}**")
-                        company_options_for_partner = [f"{company['name']}" for company in companies_only]
-                        selected_company_for_partner = st.selectbox(
-                            "Which company is this license for?*", 
-                            company_options_for_partner, 
-                            key="company_for_partner",
-                            help="Select the company that will use this license (managed by the partner)"
-                        )
-                        
-                        # Find the selected company
-                        company_index = company_options_for_partner.index(selected_company_for_partner)
-                        selected_company = companies_only[company_index]
-                        new_company_id = selected_company['id']
-                        new_company = selected_company['name']
-                        entity_name = f"{new_company} (via {new_partner})"
-                    else:
-                        st.error("⚠️ No companies found. Partners need an associated company for the license.")
-                        st.stop()
+                    entity_name = f"{new_partner} (Partner)"
             else:
                 st.error("⚠️ No companies or partners found in database. Please contact admin to add entities.")
                 st.stop()

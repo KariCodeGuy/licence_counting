@@ -41,21 +41,46 @@ class DatabaseConnection:
     def fetch_license_data(self, start_date=None, end_date=None):
         """Fetch license data from your existing database schema"""
         try:
-            query = self.session.query(LicenseRecord, Company.company_name.label('company_name'))
-            query = query.join(Company, LicenseRecord.company_id == Company.id)
+            query = self.session.query(
+                LicenseRecord, 
+                Company.company_name.label('company_name'),
+                Partner.partner_name.label('partner_name')
+            )
+            query = query.outerjoin(Company, LicenseRecord.company_id == Company.id)
+            query = query.outerjoin(Partner, LicenseRecord.partner_id == Partner.id)
             if start_date:
                 query = query.filter(LicenseRecord.start_date >= start_date)
             if end_date:
                 query = query.filter(LicenseRecord.start_date <= end_date)
             licenses = query.all()
+            
             # Convert list of tuples to DataFrame
-            df = pd.DataFrame([{**license.__dict__, 'company': company_name} for license, company_name in licenses])
-            # Drop SQLAlchemy state column
-            df = df.drop('_sa_instance_state', axis=1, errors='ignore')
+            data = []
+            for license_record, company_name, partner_name in licenses:
+                row = license_record.__dict__.copy()
+                row.pop('_sa_instance_state', None)  # Remove SQLAlchemy state
+                
+                # Set the entity name based on whether it's a company or partner license
+                if company_name:
+                    row['company'] = company_name
+                    row['partner'] = None
+                elif partner_name:
+                    row['company'] = partner_name  # Use partner name as company for display
+                    row['partner'] = partner_name
+                else:
+                    row['company'] = 'Unknown'
+                    row['partner'] = None
+                    
+                data.append(row)
+            
+            df = pd.DataFrame(data)
             return df
+            
         except Exception as e:
             print(f"Error fetching data: {e}")
-            return None
+            return pd.DataFrame()
+        finally:
+            self.session.close()
             
     def insert_license(self, license_data):
         """Insert new license record into license_records table"""
@@ -190,6 +215,7 @@ class DatabaseConnection:
             return pd.DataFrame()
         
         try:
+            # Only get active users for company licenses, not partner licenses
             query = '''
             SELECT 
               c.company_name,
@@ -231,6 +257,7 @@ class DatabaseConnection:
             return pd.DataFrame()
         
         try:
+            # Only get user counts for companies, not partners
             query = '''
             SELECT 
                 c.company_name,
