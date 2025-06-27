@@ -70,114 +70,85 @@ class DatabaseConnection:
             return False
             
     def get_active_companies(self):
-        """Get list of active companies for dropdowns"""
+        """Fetch active companies from database"""
         connection = self.get_connection()
         if not connection:
             return []
-            
+        
         try:
-            query = """
-            SELECT id, company_name 
-            FROM fido1.companies 
-            WHERE active = 1 
-            ORDER BY company_name
-            """
-            
-            cursor = connection.cursor()
+            cursor = connection.cursor(dictionary=True)
+            query = "SELECT id, company_name FROM companies WHERE active = 1"
             cursor.execute(query)
-            companies = [{'id': row[0], 'company_name': row[1]} for row in cursor.fetchall()]
+            companies = cursor.fetchall()
             return companies
-            
         except Exception as e:
             print(f"Error fetching companies: {e}")
             return []
-            
         finally:
-            cursor.close()
-            connection.close()
-    
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
     def get_active_partners(self):
-        """Get list of active partners for dropdowns"""
+        """Fetch active partners from database"""
         connection = self.get_connection()
         if not connection:
             return []
-            
+        
         try:
-            query = """
-            SELECT id, partner_name 
-            FROM fido1.partners 
-            WHERE active = 1 
-            ORDER BY partner_name
-            """
-            
-            cursor = connection.cursor()
+            cursor = connection.cursor(dictionary=True)
+            query = "SELECT id, partner_name AS name FROM partners"
             cursor.execute(query)
-            partners = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
+            partners = cursor.fetchall()
             return partners
-            
         except Exception as e:
             print(f"Error fetching partners: {e}")
             return []
-            
         finally:
-            cursor.close()
-            connection.close()
-    
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
     def get_product_codes(self):
-        """Get list of available product codes for dropdowns"""
+        """Fetch product codes from database"""
         connection = self.get_connection()
         if not connection:
             return []
-            
+        
         try:
-            query = """
-            SELECT id, code, label 
-            FROM fido1.license_product_codes 
-            ORDER BY code
-            """
-            
-            cursor = connection.cursor()
+            cursor = connection.cursor(dictionary=True)
+            query = "SELECT id, code, label FROM license_product_codes ORDER BY code"
             cursor.execute(query)
-            product_codes = [{'id': row[0], 'code': row[1], 'label': row[2]} for row in cursor.fetchall()]
+            product_codes = cursor.fetchall()
             return product_codes
-            
         except Exception as e:
             print(f"Error fetching product codes: {e}")
             return []
-            
         finally:
-            cursor.close()
-            connection.close()
-    
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
     def get_product_code_by_code(self, code):
-        """Get product code ID by code string (e.g., 'SUB' -> id)"""
+        """Fetch a specific product code by its code value"""
         connection = self.get_connection()
         if not connection:
             return None
-            
+        
         try:
-            query = """
-            SELECT id, code, label 
-            FROM fido1.license_product_codes 
-            WHERE code = %s
-            """
-            
-            cursor = connection.cursor()
+            cursor = connection.cursor(dictionary=True)
+            query = "SELECT id, code, label FROM license_product_codes WHERE code = %s"
             cursor.execute(query, (code,))
             result = cursor.fetchone()
-            
-            if result:
-                return {'id': result[0], 'code': result[1], 'label': result[2]}
-            return None
-            
+            return result
         except Exception as e:
             print(f"Error fetching product code: {e}")
             return None
-            
         finally:
-            cursor.close()
-            connection.close()
-    
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
     def update_license(self, license_id, license_data):
         """Update existing license record in license_records table"""
         try:
@@ -225,19 +196,17 @@ class DatabaseConnection:
               lr.number_of_licenses,
               COUNT(DISTINCT u.id) AS active_users,
               ROUND(COUNT(DISTINCT u.id) / lr.number_of_licenses, 2) AS utilization_ratio
-            FROM fido1.license_records lr
-            JOIN fido1.companies c ON lr.company_id = c.id
-            LEFT JOIN fido1.users_portal u ON u.company_id = c.id
+            FROM license_records lr
+            JOIN companies c ON lr.company_id = c.id
+            LEFT JOIN users_portal u ON u.company_id = c.id
             INNER JOIN (
                 SELECT DISTINCT deployed_by AS user_id
-                FROM fido1.logger_sessions
+                FROM logger_sessions
                 WHERE created >= CURDATE() - INTERVAL 14 DAY
                 AND deployed_by IS NOT NULL
-
                 UNION
-
                 SELECT DISTINCT collected_by AS user_id
-                FROM fido1.logger_sessions
+                FROM logger_sessions
                 WHERE last_update >= CURDATE() - INTERVAL 14 DAY
                 AND collected_by IS NOT NULL
             ) recent_activity ON recent_activity.user_id = u.id
@@ -245,20 +214,18 @@ class DatabaseConnection:
             GROUP BY lr.id, c.company_name, lr.number_of_licenses;
             '''
             
-            cursor = connection.cursor(dictionary=True)
-            cursor.execute(query)
-            results = cursor.fetchall()
-            df = pd.DataFrame(results)
+            df = pd.read_sql(query, connection)
             return df
+            
         except Exception as e:
             print(f"Error fetching active users per company: {e}")
             return pd.DataFrame()
         finally:
-            cursor.close()
-            connection.close()
+            if connection.is_connected():
+                connection.close()
 
     def get_user_count_from_portal(self):
-        """Fetch user count per company from the users_portal table"""
+        """Fetch user count per company from users_portal table"""
         connection = self.get_connection()
         if not connection:
             return pd.DataFrame()
@@ -266,24 +233,23 @@ class DatabaseConnection:
         try:
             query = '''
             SELECT 
-              c.company_name,
-              COUNT(u.id) AS user_count
-            FROM fido1.users_portal u
-            JOIN fido1.companies c ON u.company_id = c.id
-            GROUP BY c.company_name;
+                c.company_name,
+                COUNT(u.id) as user_count
+            FROM users_portal u
+            JOIN companies c ON u.company_id = c.id
+            WHERE u.active = 1
+            GROUP BY c.id, c.company_name
             '''
             
-            cursor = connection.cursor(dictionary=True)
-            cursor.execute(query)
-            results = cursor.fetchall()
-            df = pd.DataFrame(results)
+            df = pd.read_sql(query, connection)
             return df
+            
         except Exception as e:
             print(f"Error fetching user count from portal: {e}")
             return pd.DataFrame()
         finally:
-            cursor.close()
-            connection.close()
+            if connection.is_connected():
+                connection.close()
 
 # Example usage for when you're ready to switch from mock data:
 """
