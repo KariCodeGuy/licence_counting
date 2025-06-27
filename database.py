@@ -218,19 +218,17 @@ class DatabaseConnection:
             return pd.DataFrame()
         
         try:
-            # Get active users for both company and partner licenses
+            # Get active users for company licenses only (partners will show 0)
             query = '''
             SELECT 
-              COALESCE(c.company_name, p.partner_name) as entity_name,
-              CASE WHEN c.company_name IS NOT NULL THEN 'Company' ELSE 'Partner' END as entity_type,
+              c.company_name as entity_name,
+              'Company' as entity_type,
               lr.number_of_licenses,
               COUNT(DISTINCT u.id) AS active_users,
               ROUND(COUNT(DISTINCT u.id) / lr.number_of_licenses, 2) AS utilization_ratio
             FROM license_records lr
-            LEFT JOIN companies c ON lr.company_id = c.id
-            LEFT JOIN partners p ON lr.partner_id = p.id
-            LEFT JOIN users_portal u ON u.company_id = COALESCE(lr.company_id, 
-                (SELECT company_id FROM partner_companies pc WHERE pc.partner_id = lr.partner_id LIMIT 1))
+            JOIN companies c ON lr.company_id = c.id
+            LEFT JOIN users_portal u ON u.company_id = c.id
             INNER JOIN (
                 SELECT DISTINCT deployed_by AS user_id
                 FROM logger_sessions
@@ -242,8 +240,8 @@ class DatabaseConnection:
                 WHERE last_update >= CURDATE() - INTERVAL 14 DAY
                 AND collected_by IS NOT NULL
             ) recent_activity ON recent_activity.user_id = u.id
-            WHERE (lr.company_id IS NOT NULL OR lr.partner_id IS NOT NULL)
-            GROUP BY lr.id, COALESCE(c.company_name, p.partner_name), lr.number_of_licenses;
+            WHERE lr.company_id IS NOT NULL
+            GROUP BY lr.id, c.company_name, lr.number_of_licenses;
             '''
             
             df = pd.read_sql(query, connection)
@@ -257,25 +255,22 @@ class DatabaseConnection:
                 connection.close()
 
     def get_user_count_from_portal(self):
-        """Fetch user count per company/partner from users_portal table"""
+        """Fetch user count per company from users_portal table"""
         connection = self.get_connection()
         if not connection:
             return pd.DataFrame()
         
         try:
-            # Get user counts for both company and partner licenses
+            # Get user counts for company licenses only (partners will show 0)
             query = '''
             SELECT 
-                COALESCE(c.company_name, p.partner_name) as entity_name,
-                CASE WHEN c.company_name IS NOT NULL THEN 'Company' ELSE 'Partner' END as entity_type,
+                c.company_name as entity_name,
+                'Company' as entity_type,
                 COUNT(u.id) as user_count
-            FROM license_records lr
-            LEFT JOIN companies c ON lr.company_id = c.id
-            LEFT JOIN partners p ON lr.partner_id = p.id
-            LEFT JOIN users_portal u ON u.company_id = COALESCE(lr.company_id,
-                (SELECT company_id FROM partner_companies pc WHERE pc.partner_id = lr.partner_id LIMIT 1))
-            WHERE u.active = 1 AND (lr.company_id IS NOT NULL OR lr.partner_id IS NOT NULL)
-            GROUP BY lr.id, COALESCE(c.company_name, p.partner_name)
+            FROM users_portal u
+            JOIN companies c ON u.company_id = c.id
+            WHERE u.active = 1
+            GROUP BY c.id, c.company_name
             '''
             
             df = pd.read_sql(query, connection)
