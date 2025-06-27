@@ -1,35 +1,35 @@
-# License Counting Dashboard
+# License Management System
 
-A comprehensive Streamlit-based dashboard for tracking and managing software licenses, user counts, and utilization metrics.
+A generic, open-source license tracking dashboard built with Streamlit for organizations managing software licenses and user access.
 
 ## Features
 
 ### 📊 **Dashboard & Analytics**
 - Real-time license utilization tracking
-- Active user monitoring (14-day activity window)
-- Revenue tracking across multiple currencies
+- User activity monitoring (configurable time window)
+- Multi-currency revenue tracking
 - Visual charts and metrics
-- License vs. user comparison analytics
+- License compliance analytics
 
 ### 🏢 **Multi-Entity Support**
-- Company license management
-- Partner license tracking
-- Unified entity selection interface
+- Organization license management
+- Partner/reseller tracking
+- Flexible entity selection
 
 ### ✏️ **License Management**
-- Add new licenses with comprehensive details
-- Edit existing license records
+- Create and edit license records
 - Bulk CSV import functionality
-- Status tracking (Active/Expired)
+- Status tracking and lifecycle management
+- Cost and revenue tracking
 
 ### 👥 **User & Activity Tracking**
-- Total user count per company
-- Active user detection based on system activity
+- User count per organization
+- Activity-based user detection
 - Utilization ratio calculations
-- License compliance monitoring
+- Compliance monitoring
 
 ### 🔐 **Security & Access Control**
-- Role-based permissions (view/edit)
+- Role-based permissions
 - Secure database connections
 - Environment-based configuration
 
@@ -38,8 +38,8 @@ A comprehensive Streamlit-based dashboard for tracking and managing software lic
 - **Frontend**: Streamlit
 - **Backend**: Python 3.12+
 - **Database**: MySQL with SQLAlchemy ORM
-- **Charts**: Plotly
-- **Authentication**: Custom auth manager
+- **Visualization**: Plotly
+- **Authentication**: Built-in auth system
 
 ## Installation
 
