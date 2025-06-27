@@ -580,6 +580,10 @@ if not display_df.empty:
         'Partner' if pd.notna(row.get('partner')) and row.get('partner') 
         else 'Company', axis=1)
     
+    # Add entity type labels to entity names for charts
+    display_df['entity_with_type'] = display_df.apply(lambda row: 
+        f"{row['entity']} ({row['entity_type']})", axis=1)
+    
     # For filtering purposes, create a unified company list that includes both companies and partners
     if 'entity' not in filtered_df.columns:
         filtered_df['entity'] = filtered_df.apply(lambda row: 
@@ -680,6 +684,60 @@ if can_edit:
             else:
                 st.info("ℹ️ No changes detected to save.")
 
+    # Add delete functionality
+    st.markdown("---")
+    st.subheader("🗑️ Delete License")
+    
+    if can_edit:
+        # Create a simple delete interface
+        delete_col1, delete_col2 = st.columns([3, 1])
+        
+        with delete_col1:
+            if not display_df.empty:
+                # Create options for deletion
+                delete_options = []
+                for idx, row in display_df.iterrows():
+                    entity_name = row.get('entity', 'Unknown')
+                    entity_type = row.get('entity_type', 'Unknown')
+                    product = row.get('product_label', 'Unknown')
+                    licenses = row.get('number_of_licenses', 0)
+                    delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licenses} licenses")
+                
+                selected_delete = st.selectbox(
+                    "Select license to delete:",
+                    options=delete_options,
+                    key="delete_selector",
+                    help="Choose the license you want to delete"
+                )
+                
+                if selected_delete:
+                    # Find the corresponding row
+                    selected_index = delete_options.index(selected_delete)
+                    selected_row = display_df.iloc[selected_index]
+                    license_id = selected_row.get('id')
+                    entity_name = selected_row.get('entity', 'Unknown')
+                    
+                    st.warning(f"⚠️ You are about to delete license for **{entity_name}**")
+                    st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licenses")
+        
+        with delete_col2:
+            if selected_delete and st.button("🗑️ Delete", type="secondary", use_container_width=True):
+                if license_id:
+                    db = DatabaseConnection()
+                    if db.delete_license(license_id):
+                        st.success(f"✅ License for {entity_name} deleted successfully!")
+                        # Clear cache and refresh
+                        load_license_data.clear()
+                        st.session_state.df_data = None
+                        st.session_state.original_df = None
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to delete license. Please try again.")
+                else:
+                    st.error("❌ Could not identify license to delete.")
+    else:
+        st.info("👁️ **View Only**: Contact admin for delete access.")
+
 else:
     # Read-only view for viewers - show comprehensive data
     view_columns = ['company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
@@ -731,7 +789,7 @@ if not filtered_df.empty:
     with col1:
         st.subheader("Licenses vs Active Users")
         # Focus on non-monetary metrics to avoid currency mixing
-        company_summary = filtered_df.groupby('entity').agg({
+        company_summary = filtered_df.groupby('entity_with_type').agg({
             'number_of_licenses': 'sum',
             'user_count': 'sum',
             'active_users': 'sum'
@@ -746,7 +804,7 @@ if not filtered_df.empty:
                 x='number_of_licenses',
                 y='active_users',
                 size='number_of_licenses',  # Use license count instead of revenue for sizing
-                hover_name='entity',
+                hover_name='entity_with_type',
                 hover_data={'user_count': True},
                 title="Licenses vs Active Users (bubble size = total licenses)",
                 labels={'number_of_licenses': 'Number of Licenses', 'active_users': 'Active Users'}
@@ -825,7 +883,7 @@ if not filtered_df.empty:
         timeline_df,
         x_start='start_date',
         x_end='end_date',
-        y='entity',
+        y='entity_with_type',
         color='status',
         title="License Duration by Entity",
         hover_data=['number_of_licenses', 'user_count', 'active_users', 'total_cost', 'cost_per_license']
