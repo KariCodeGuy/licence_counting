@@ -476,7 +476,7 @@ active_users_df = db.get_active_users_per_company()
 
 # Merge active user data with filtered_df
 if not active_users_df.empty:
-    filtered_df = filtered_df.merge(active_users_df[['company_name', 'active_users']], left_on='company', right_on='company_name', how='left')
+    filtered_df = filtered_df.merge(active_users_df[['entity_name', 'active_users']], left_on='entity', right_on='entity_name', how='left')
     # Use active_users_y if it exists, else fill with 0
     if 'active_users_y' in filtered_df.columns:
         filtered_df = filtered_df.assign(active_users=filtered_df['active_users_y'].fillna(0))
@@ -485,7 +485,7 @@ if not active_users_df.empty:
     else:
         filtered_df = filtered_df.assign(active_users=filtered_df['active_users'].fillna(0))
     # Cleanup extra columns from merge
-    columns_to_drop = [col for col in ['active_users_x', 'active_users_y', 'company_name_x'] if col in filtered_df.columns]
+    columns_to_drop = [col for col in ['active_users_x', 'active_users_y', 'entity_name'] if col in filtered_df.columns]
     if columns_to_drop:
         filtered_df = filtered_df.drop(columns=columns_to_drop)
 
@@ -494,7 +494,7 @@ user_count_df = db.get_user_count_from_portal()
 
 # Merge user count data with filtered_df
 if not user_count_df.empty:
-    filtered_df = filtered_df.merge(user_count_df[['company_name', 'user_count']], left_on='company', right_on='company_name', how='left')
+    filtered_df = filtered_df.merge(user_count_df[['entity_name', 'user_count']], left_on='entity', right_on='entity_name', how='left')
     # Use user_count_y if it exists, else fill with 0
     if 'user_count_y' in filtered_df.columns:
         filtered_df = filtered_df.assign(user_count=filtered_df['user_count_y'].fillna(0))
@@ -503,7 +503,7 @@ if not user_count_df.empty:
     else:
         filtered_df = filtered_df.assign(user_count=filtered_df['user_count'].fillna(0))
     # Cleanup extra columns from merge
-    columns_to_drop = [col for col in ['user_count_x', 'user_count_y', 'company_name_y'] if col in filtered_df.columns]
+    columns_to_drop = [col for col in ['user_count_x', 'user_count_y', 'entity_name'] if col in filtered_df.columns]
     if columns_to_drop:
         filtered_df = filtered_df.drop(columns=columns_to_drop)
 
