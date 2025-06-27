@@ -553,7 +553,7 @@ if not user_count_df.empty and not filtered_df.empty:
         filtered_df = filtered_df.drop(columns=columns_to_drop)
 
 # Key metrics
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     total_licences = filtered_df['number_of_licenses'].sum() if not filtered_df.empty else 0
@@ -568,24 +568,10 @@ with col3:
     st.metric("Active Users", f"{active_users:,}", help="Users with activity detected in the last 14 days")
 
 with col4:
-    st.info("💡 Revenue is shown separately for each currency below. No conversion is performed.")
-
-with col5:
     active_licences = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
     st.metric("Active Licences", f"{active_licences:,}")
 
-with col6:
-    if not filtered_df.empty and 'currency' in filtered_df.columns:
-        currency_counts = filtered_df['currency'].value_counts()
-        if not currency_counts.empty:
-            common_currency = currency_counts.index[0]
-            avg_cost = int(filtered_df[filtered_df['currency'] == common_currency]['cost_per_license'].mean())
-            st.metric("Avg Cost/Licence (per year)", f"{avg_cost} {common_currency}")
-        else:
-            st.metric("Avg Cost/Licence (per year)", "0")
-    else:
-        avg_cost_per_licence = int(filtered_df['cost_per_license'].mean()) if not filtered_df.empty else 0
-        st.metric("Avg Cost/Licence (per year)", f"{avg_cost_per_licence}")
+# col5 is left for future metrics if needed
 
 st.markdown("---")
 
@@ -631,13 +617,8 @@ if can_edit:
     # Editable data for admins - show comprehensive columns but make key ones editable (include id for updates)
     edit_columns = ['id', 'company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
                    'user_count', 'active_users', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
-    
-    # Only include columns that exist in the dataframe
     available_edit_columns = [col for col in edit_columns if col in display_df.columns]
-    
-    # Store original data for comparison - update it every time the data changes
     st.session_state.original_df = display_df[available_edit_columns].copy()
-    
     edited_df = st.data_editor(
         display_df[available_edit_columns],
         use_container_width=True,
@@ -665,50 +646,50 @@ if can_edit:
             'status': st.column_config.SelectboxColumn('Status', options=['Active', 'Expired'], required=True, width="small")
         },
         hide_index=True,
-        key="license_editor"
+        key="licence_editor"
     )
-    
-    # Add save changes button
-    if st.button("💾 Save Changes", type="primary"):
-        db = DatabaseConnection()
-        changes_saved = 0
-        
-        # Check if we have original data to compare against
-        if st.session_state.original_df is None:
-            st.error("❌ No original data found for comparison. Please refresh the page.")
-        else:
-            # Compare edited_df with original to find changes
-            for idx in edited_df.index:
-                # Get the license ID
-                if 'id' in display_df.columns:
-                    license_id = display_df.loc[idx, 'id']
-                    
-                    # Check each editable field for changes
-                    changes = {}
-                    editable_fields = ['start_date', 'end_date', 'number_of_licenses', 'cost_per_license', 'currency', 'status']
-                    
-                    for field in editable_fields:
-                        if field in edited_df.columns and field in st.session_state.original_df.columns:
-                            old_val = st.session_state.original_df.loc[idx, field]
-                            new_val = edited_df.loc[idx, field]
-                            
-                            if old_val != new_val:
-                                # Convert pandas/numpy types to Python native types for MySQL
-                                if hasattr(new_val, 'item'):  # numpy/pandas scalar
-                                    changes[field] = new_val.item()
-                                else:
-                                    changes[field] = new_val
-                    
-                    # If there are changes, update the database
-                    if changes:
-                        # Calculate new total_cost if relevant fields changed
-                        if 'number_of_licenses' in changes or 'cost_per_license' in changes:
-                            licences = changes.get('number_of_licenses', edited_df.loc[idx, 'number_of_licenses'])
-                            cost_per = changes.get('cost_per_license', edited_df.loc[idx, 'cost_per_license'])
-                            changes['total_cost'] = licences * cost_per
+    col_save, col_delete = st.columns([1, 1])
+    with col_save:
+        if st.button("💾 Save Changes", type="primary"):
+            db = DatabaseConnection()
+            changes_saved = 0
+            
+            # Check if we have original data to compare against
+            if st.session_state.original_df is None:
+                st.error("❌ No original data found for comparison. Please refresh the page.")
+            else:
+                # Compare edited_df with original to find changes
+                for idx in edited_df.index:
+                    # Get the license ID
+                    if 'id' in display_df.columns:
+                        license_id = display_df.loc[idx, 'id']
                         
-                        if db.update_license(license_id, changes):
-                            changes_saved += 1
+                        # Check each editable field for changes
+                        changes = {}
+                        editable_fields = ['start_date', 'end_date', 'number_of_licenses', 'cost_per_license', 'currency', 'status']
+                        
+                        for field in editable_fields:
+                            if field in edited_df.columns and field in st.session_state.original_df.columns:
+                                old_val = st.session_state.original_df.loc[idx, field]
+                                new_val = edited_df.loc[idx, field]
+                                
+                                if old_val != new_val:
+                                    # Convert pandas/numpy types to Python native types for MySQL
+                                    if hasattr(new_val, 'item'):  # numpy/pandas scalar
+                                        changes[field] = new_val.item()
+                                    else:
+                                        changes[field] = new_val
+                        
+                        # If there are changes, update the database
+                        if changes:
+                            # Calculate new total_cost if relevant fields changed
+                            if 'number_of_licenses' in changes or 'cost_per_license' in changes:
+                                licences = changes.get('number_of_licenses', edited_df.loc[idx, 'number_of_licenses'])
+                                cost_per = changes.get('cost_per_license', edited_df.loc[idx, 'cost_per_license'])
+                                changes['total_cost'] = licences * cost_per
+                            
+                            if db.update_license(license_id, changes):
+                                changes_saved += 1
             
             if changes_saved > 0:
                 st.success(f"✅ Saved {changes_saved} changes to database!")
@@ -719,23 +700,13 @@ if can_edit:
                 st.rerun()
             else:
                 st.info("ℹ️ No changes detected to save.")
-
-    # Add delete functionality
-    st.markdown("---")
-    st.subheader("🗑️ Delete License")
-    
-    if can_edit:
-        # Create a simple delete interface
-        delete_col1, delete_col2 = st.columns([3, 1])
-        
-        # Initialize selected_delete variable
-        selected_delete = None
-        license_id = None
-        entity_name = None
-        
-        with delete_col1:
+    with col_delete:
+        if st.button("🗑️ Delete Licences", type="secondary"):
+            st.session_state.show_delete_popup = True
+    if st.session_state.get("show_delete_popup", False):
+        with st.popover("Delete Licences", use_container_width=True):
+            st.subheader("🗑️ Delete Licence")
             if not display_df.empty:
-                # Create options for deletion
                 delete_options = []
                 for idx, row in display_df.iterrows():
                     entity_name = row.get('entity', 'Unknown')
@@ -743,41 +714,35 @@ if can_edit:
                     product = row.get('product_label', 'Unknown')
                     licences = row.get('number_of_licenses', 0)
                     delete_options.append(f"{entity_name} ({entity_type}) - {product} - {licences} licences")
-                
                 selected_delete = st.selectbox(
-                    "Select license to delete:",
+                    "Select licence to delete:",
                     options=delete_options,
-                    key="delete_selector",
-                    help="Choose the license you want to delete"
+                    key="delete_selector_popup",
+                    help="Choose the licence you want to delete"
                 )
-                
                 if selected_delete:
-                    # Find the corresponding row
                     selected_index = delete_options.index(selected_delete)
                     selected_row = display_df.iloc[selected_index]
-                    license_id = selected_row.get('id')
+                    licence_id = selected_row.get('id')
                     entity_name = selected_row.get('entity', 'Unknown')
-                    
-                    st.warning(f"⚠️ You are about to delete license for **{entity_name}**")
+                    st.warning(f"⚠️ You are about to delete licence for **{entity_name}**")
                     st.info(f"**Details:** {selected_row.get('product_label', 'Unknown')} - {selected_row.get('number_of_licenses', 0)} licences")
-        
-        with delete_col2:
-            if selected_delete and st.button("🗑️ Delete", type="secondary", use_container_width=True):
-                if license_id:
-                    db = DatabaseConnection()
-                    if db.delete_license(license_id):
-                        st.success(f"✅ License for {entity_name} deleted successfully!")
-                        # Clear cache and refresh
-                        load_license_data.clear()
-                        st.session_state.df_data = None
-                        st.session_state.original_df = None
+                    if st.button("🗑️ Confirm Delete", type="primary"):
+                        db = DatabaseConnection()
+                        if db.delete_license(licence_id):
+                            st.success(f"✅ Licence for {entity_name} deleted successfully!")
+                            load_license_data.clear()
+                            st.session_state.df_data = None
+                            st.session_state.original_df = None
+                            st.session_state.show_delete_popup = False
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete licence. Please try again.")
+                    if st.button("❌ Cancel", type="secondary"):
+                        st.session_state.show_delete_popup = False
                         st.rerun()
-                    else:
-                        st.error("❌ Failed to delete license. Please try again.")
-                else:
-                    st.error("❌ Could not identify license to delete.")
-    else:
-        st.info("👁️ **View Only**: Contact admin for delete access.")
+            else:
+                st.info("No licences available to delete.")
 
 else:
     # Read-only view for viewers - show comprehensive data
