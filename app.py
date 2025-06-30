@@ -812,15 +812,36 @@ active_relay_devices_df = db.get_active_relay_devices(
     user_partner_id=user_partner_id
 )
 
+# Process active relay devices data - aggregate by company and partner
+if not active_relay_devices_df.empty:
+    # Create entity-based aggregation for dashboard display
+    company_relay_data = active_relay_devices_df.groupby('company_name').agg({
+        'active_relay_devices': 'sum'
+    }).reset_index()
+    company_relay_data['entity_name'] = company_relay_data['company_name']
+    company_relay_data['entity_type'] = 'Company'
+    
+    # Handle partner data (some users might have direct partner relationships)
+    partner_relay_data = active_relay_devices_df[active_relay_devices_df['partner_name'].notna()].groupby('partner_name').agg({
+        'active_relay_devices': 'sum'
+    }).reset_index()
+    partner_relay_data['entity_name'] = partner_relay_data['partner_name']
+    partner_relay_data['entity_type'] = 'Partner'
+    
+    # Combine company and partner data
+    relay_aggregated_df = pd.concat([company_relay_data, partner_relay_data], ignore_index=True)
+else:
+    relay_aggregated_df = pd.DataFrame(columns=['entity_name', 'active_relay_devices'])
+
 # Merge active relay devices data with filtered_df
-if not active_relay_devices_df.empty and not filtered_df.empty:
+if not relay_aggregated_df.empty and not filtered_df.empty:
     # Ensure entity column exists before merge
     if 'entity' not in filtered_df.columns:
         filtered_df['entity'] = filtered_df.apply(lambda row: 
             row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
             else row.get('company', ''), axis=1)
     
-    filtered_df = filtered_df.merge(active_relay_devices_df[['entity_name', 'active_relay_devices']], left_on='entity', right_on='entity_name', how='left')
+    filtered_df = filtered_df.merge(relay_aggregated_df[['entity_name', 'active_relay_devices']], left_on='entity', right_on='entity_name', how='left')
     # Use active_relay_devices_y if it exists, else fill with 0
     if 'active_relay_devices_y' in filtered_df.columns:
         filtered_df = filtered_df.assign(active_relay_devices=filtered_df['active_relay_devices_y'].fillna(0))
@@ -1194,6 +1215,40 @@ if not filtered_df.empty:
             )
         else:
             st.info("📊 No relay data available for summary table")
+        
+        # Add detailed user-level relay devices table
+        st.subheader("👥 User-Level Relay Device Activity")
+        if not active_relay_devices_df.empty:
+            # Show top users by relay device activity
+            top_users = active_relay_devices_df.nlargest(10, 'active_relay_devices')
+            
+            st.dataframe(
+                top_users,
+                use_container_width=True,
+                column_config={
+                    'user_name': st.column_config.TextColumn('User Name', width="medium"),
+                    'email': st.column_config.TextColumn('Email', width="medium"),
+                    'company_name': st.column_config.TextColumn('Company', width="medium"),
+                    'partner_name': st.column_config.TextColumn('Partner', width="medium"),
+                    'active_relay_devices': st.column_config.NumberColumn('Active Relay Devices', width="small")
+                }
+            )
+            
+            # Show summary statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                total_users_with_devices = len(active_relay_devices_df)
+                st.metric("👥 Users with Active Devices", f"{total_users_with_devices}")
+            
+            with col2:
+                avg_devices_per_user = active_relay_devices_df['active_relay_devices'].mean()
+                st.metric("🔗 Avg Devices per User", f"{avg_devices_per_user:.1f}")
+            
+            with col3:
+                max_devices_user = active_relay_devices_df.loc[active_relay_devices_df['active_relay_devices'].idxmax()]
+                st.metric("🏆 Top User", f"{max_devices_user['user_name']} ({max_devices_user['active_relay_devices']} devices)")
+        else:
+            st.info("📊 No user-level relay device data available")
     
     elif st.session_state.selected_dashboard == 'User Licenses':
         # User-specific charts
