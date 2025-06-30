@@ -913,8 +913,14 @@ with col3:
 with col4:
     # Show average utilization across all entities
     if not filtered_df.empty:
-        avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
-        st.metric("📈 Avg Utilization", f"{avg_utilization:.1f}%", help="Average license utilization across all entities")
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            # For Relay licenses, use active relay devices for utilization
+            avg_utilization = (filtered_df['active_relay_devices'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+            st.metric("📈 Avg Relay Utilization", f"{avg_utilization:.1f}%", help="Average relay device utilization across all entities")
+        else:
+            # For User licenses and All licenses, use active users for utilization
+            avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+            st.metric("📈 Avg Utilization", f"{avg_utilization:.1f}%", help="Average license utilization across all entities")
     else:
         st.metric("📈 Avg Utilization", "0%", help="Average license utilization across all entities")
 
@@ -954,7 +960,14 @@ if not display_df.empty:
             row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
             else row.get('company', ''), axis=1)
     
-    display_df['active_utilization_pct'] = ((display_df['active_users'] / display_df['number_of_licenses']) * 100).round(1)
+    # Calculate utilization based on license type
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        # For Relay licenses, use active relay devices for utilization
+        display_df['active_utilization_pct'] = ((display_df['active_relay_devices'] / display_df['number_of_licenses']) * 100).round(1)
+    else:
+        # For User licenses and All licenses, use active users for utilization
+        display_df['active_utilization_pct'] = ((display_df['active_users'] / display_df['number_of_licenses']) * 100).round(1)
+    
     display_df['total_utilization_pct'] = ((display_df['user_count'] / display_df['number_of_licenses']) * 100).round(1)
     
     # Create entity_type column for display
@@ -1417,9 +1430,16 @@ if not filtered_df.empty:
     col1, col2 = st.columns(2)
 
     with col1:
-        # Calculate utilization ratio based on active users
+        # Calculate utilization ratio based on active users or active relay devices
         utilization_df = filtered_df.copy()
-        utilization_df['active_utilization_ratio'] = (utilization_df['active_users'] / utilization_df['number_of_licenses']).round(2)
+        
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            # For Relay licenses, use active relay devices
+            utilization_df['active_utilization_ratio'] = (utilization_df['active_relay_devices'] / utilization_df['number_of_licenses']).round(2)
+        else:
+            # For User licenses and All licenses, use active users
+            utilization_df['active_utilization_ratio'] = (utilization_df['active_users'] / utilization_df['number_of_licenses']).round(2)
+        
         utilization_df['utilization_status'] = utilization_df['active_utilization_ratio'].apply(
             lambda x: 'Over-utilized' if x > 1.0 else 'Under-utilized' if x < 0.7 else 'Well-utilized'
         )
@@ -1427,11 +1447,17 @@ if not filtered_df.empty:
         utilization_summary = utilization_df['utilization_status'].value_counts().reset_index()
         utilization_summary.columns = ['status', 'count']
         
+        # Update title based on dashboard type
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            title = "Active Relay Device Utilization Status"
+        else:
+            title = "Active License Utilization Status"
+        
         fig_util = px.pie(
             utilization_summary,
             values='count',
             names='status',
-            title="Active License Utilization Status",
+            title=title,
             color_discrete_map={
                 'Well-utilized': '#2E8B57',
                 'Under-utilized': '#FFD700', 
@@ -1441,15 +1467,30 @@ if not filtered_df.empty:
         st.plotly_chart(fig_util, use_container_width=True)
 
     with col2:
-        # User vs License comparison chart
-        company_util = utilization_df.groupby('entity_with_type').agg({
-            'user_count': 'sum',
-            'active_users': 'sum',
-            'number_of_licenses': 'sum'
-        }).reset_index()
-        
-        # Show top 10 entities by total user count
-        top_user_companies = company_util.nlargest(10, 'user_count')
+        # User vs License comparison chart (or Relay Device vs License for Relay dashboard)
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            # For Relay licenses, show relay devices vs licenses
+            company_util = utilization_df.groupby('entity_with_type').agg({
+                'active_relay_devices': 'sum',
+                'number_of_licenses': 'sum'
+            }).reset_index()
+            
+            # Show top 10 entities by relay device count
+            top_user_companies = company_util.nlargest(10, 'active_relay_devices')
+            chart_title = "Relay License Usage vs Active Devices by Entity"
+            y_axis_title = "Count"
+        else:
+            # For User licenses and All licenses, show users vs licenses
+            company_util = utilization_df.groupby('entity_with_type').agg({
+                'user_count': 'sum',
+                'active_users': 'sum',
+                'number_of_licenses': 'sum'
+            }).reset_index()
+            
+            # Show top 10 entities by total user count
+            top_user_companies = company_util.nlargest(10, 'user_count')
+            chart_title = "License Usage vs User Count by Entity"
+            y_axis_title = "Count"
         
         if not top_user_companies.empty:
             # Create grouped bar chart using plotly.graph_objects
@@ -1465,37 +1506,107 @@ if not filtered_df.empty:
                 opacity=0.8
             ))
             
-            # Add total users bar with conditional coloring
-            total_user_colors = []
-            for _, row in top_user_companies.iterrows():
-                if row['user_count'] > row['number_of_licenses']:
-                    total_user_colors.append('#DC143C')  # Red if exceeding licences
-                else:
-                    total_user_colors.append('#FFD700')  # Yellow if within limits
-            
-            fig_grouped.add_trace(go.Bar(
-                name='Total Users',
-                x=top_user_companies['entity_with_type'],
-                y=top_user_companies['user_count'],
-                marker_color=total_user_colors,
-                hovertemplate='<b>%{x}</b><br>Total Users: %{y}<extra></extra>',
-                opacity=0.9
-            ))
-            
-            # Add active users bar
-            fig_grouped.add_trace(go.Bar(
-                name='Active Users',
-                x=top_user_companies['entity_with_type'],
-                y=top_user_companies['active_users'],
-                marker_color='#2E8B57',  # Green for active users
-                hovertemplate='<b>%{x}</b><br>Active Users: %{y}<extra></extra>'
-            ))
+            if st.session_state.selected_dashboard == 'Relay Licenses':
+                # Add active relay devices bar with conditional coloring
+                relay_device_colors = []
+                for _, row in top_user_companies.iterrows():
+                    if row['active_relay_devices'] > row['number_of_licenses']:
+                        relay_device_colors.append('#DC143C')  # Red if exceeding licences
+                    else:
+                        relay_device_colors.append('#2E8B57')  # Green if within limits
+                
+                fig_grouped.add_trace(go.Bar(
+                    name='Active Relay Devices',
+                    x=top_user_companies['entity_with_type'],
+                    y=top_user_companies['active_relay_devices'],
+                    marker_color=relay_device_colors,
+                    hovertemplate='<b>%{x}</b><br>Active Relay Devices: %{y}<extra></extra>',
+                    opacity=0.9
+                ))
+                
+                # Add annotations for entities exceeding licences
+                for i, row in top_user_companies.iterrows():
+                    if row['active_relay_devices'] > row['number_of_licenses']:
+                        fig_grouped.add_annotation(
+                            x=row['entity_with_type'],
+                            y=row['active_relay_devices'] + 5,
+                            text="⚠️ OVER LIMIT",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=2,
+                            arrowcolor="red",
+                            font=dict(color="red", size=10, family="Arial Black"),
+                            bgcolor="rgba(255,255,255,0.8)",
+                            bordercolor="red",
+                            borderwidth=1
+                        )
+                
+                # Add summary alert for over-limit entities
+                over_limit_companies = top_user_companies[top_user_companies['active_relay_devices'] > top_user_companies['number_of_licenses']]
+                if not over_limit_companies.empty:
+                    st.error("🚨 **RELAY LICENSE LIMIT EXCEEDED** 🚨")
+                    for _, company in over_limit_companies.iterrows():
+                        excess = company['active_relay_devices'] - company['number_of_licenses']
+                        st.error(f"**{company['entity_with_type']}**: {company['active_relay_devices']} active devices vs {company['number_of_licenses']} licenses (⚠️ {excess} over limit)")
+            else:
+                # Add total users bar with conditional coloring
+                total_user_colors = []
+                for _, row in top_user_companies.iterrows():
+                    if row['user_count'] > row['number_of_licenses']:
+                        total_user_colors.append('#DC143C')  # Red if exceeding licences
+                    else:
+                        total_user_colors.append('#FFD700')  # Yellow if within limits
+                
+                fig_grouped.add_trace(go.Bar(
+                    name='Total Users',
+                    x=top_user_companies['entity_with_type'],
+                    y=top_user_companies['user_count'],
+                    marker_color=total_user_colors,
+                    hovertemplate='<b>%{x}</b><br>Total Users: %{y}<extra></extra>',
+                    opacity=0.9
+                ))
+                
+                # Add active users bar
+                fig_grouped.add_trace(go.Bar(
+                    name='Active Users',
+                    x=top_user_companies['entity_with_type'],
+                    y=top_user_companies['active_users'],
+                    marker_color='#2E8B57',  # Green for active users
+                    hovertemplate='<b>%{x}</b><br>Active Users: %{y}<extra></extra>'
+                ))
+                
+                # Add annotations for entities exceeding licences
+                for i, row in top_user_companies.iterrows():
+                    if row['user_count'] > row['number_of_licenses']:
+                        fig_grouped.add_annotation(
+                            x=row['entity_with_type'],
+                            y=row['user_count'] + 5,
+                            text="⚠️ OVER LIMIT",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=2,
+                            arrowcolor="red",
+                            font=dict(color="red", size=10, family="Arial Black"),
+                            bgcolor="rgba(255,255,255,0.8)",
+                            bordercolor="red",
+                            borderwidth=1
+                        )
+                
+                # Add summary alert for over-limit entities
+                over_limit_companies = top_user_companies[top_user_companies['user_count'] > top_user_companies['number_of_licenses']]
+                if not over_limit_companies.empty:
+                    st.error("🚨 **LICENSE LIMIT EXCEEDED** 🚨")
+                    for _, company in over_limit_companies.iterrows():
+                        excess = company['user_count'] - company['number_of_licenses']
+                        st.error(f"**{company['entity_with_type']}**: {company['user_count']} users vs {company['number_of_licenses']} licences (⚠️ {excess} over limit)")
             
             # Update layout for grouped bars
             fig_grouped.update_layout(
-                title="License Usage vs User Count by Entity",
+                title=chart_title,
                 xaxis_title="Entity",
-                yaxis_title="Count",
+                yaxis_title=y_axis_title,
                 barmode='group',
                 hovermode='closest',
                 xaxis={'tickangle': 45},
@@ -1508,33 +1619,7 @@ if not filtered_df.empty:
                 )
             )
             
-            # Add annotations for entities exceeding licences
-            for i, row in top_user_companies.iterrows():
-                if row['user_count'] > row['number_of_licenses']:
-                    fig_grouped.add_annotation(
-                        x=row['entity_with_type'],
-                        y=row['user_count'] + 5,
-                        text="⚠️ OVER LIMIT",
-                        showarrow=True,
-                        arrowhead=2,
-                        arrowsize=1,
-                        arrowwidth=2,
-                        arrowcolor="red",
-                        font=dict(color="red", size=10, family="Arial Black"),
-                        bgcolor="rgba(255,255,255,0.8)",
-                        bordercolor="red",
-                        borderwidth=1
-                    )
-            
             st.plotly_chart(fig_grouped, use_container_width=True)
-            
-            # Add summary alert for over-limit entities
-            over_limit_companies = top_user_companies[top_user_companies['user_count'] > top_user_companies['number_of_licenses']]
-            if not over_limit_companies.empty:
-                st.error("🚨 **LICENSE LIMIT EXCEEDED** 🚨")
-                for _, company in over_limit_companies.iterrows():
-                    excess = company['user_count'] - company['number_of_licenses']
-                    st.error(f"**{company['entity_with_type']}**: {company['user_count']} users vs {company['number_of_licenses']} licences (⚠️ {excess} over limit)")
             
         else:
             st.info("📊 No data available for user activity chart")
