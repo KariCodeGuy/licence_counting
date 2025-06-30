@@ -45,10 +45,13 @@ class DatabaseConnection:
             query = self.session.query(
                 LicenseRecord, 
                 Company.company_name.label('company_name'),
-                Partner.partner_name.label('partner_name')
+                Partner.partner_name.label('partner_name'),
+                LicenseProductCode.code.label('product_code'),
+                LicenseProductCode.label.label('product_label')
             )
             query = query.outerjoin(Company, LicenseRecord.company_id == Company.id)
             query = query.outerjoin(Partner, LicenseRecord.partner_id == Partner.id)
+            query = query.outerjoin(LicenseProductCode, LicenseRecord.product_code_id == LicenseProductCode.id)
             if start_date:
                 query = query.filter(LicenseRecord.start_date >= start_date)
             if end_date:
@@ -57,7 +60,7 @@ class DatabaseConnection:
             
             # Convert list of tuples to DataFrame
             data = []
-            for license_record, company_name, partner_name in licenses:
+            for license_record, company_name, partner_name, product_code, product_label in licenses:
                 row = license_record.__dict__.copy()
                 row.pop('_sa_instance_state', None)  # Remove SQLAlchemy state
                 
@@ -74,6 +77,10 @@ class DatabaseConnection:
                     row['company'] = 'Unknown'
                     row['partner'] = None
                     row['entity_type'] = 'Unknown'
+                
+                # Add product code information
+                row['product_code'] = product_code
+                row['product_label'] = product_label
                     
                 data.append(row)
             
