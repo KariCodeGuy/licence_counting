@@ -81,6 +81,26 @@ def delete_licence_dialog():
 def add_license_dialog():
     st.write("Fill in the details for the new license:")
     
+    # Add helpful information about multiple license rounds
+    with st.expander("ℹ️ **How Multiple License Rounds Work**", expanded=False):
+        st.markdown("""
+        **Multiple License Rounds**: You can add multiple license records for the same company/partner with different date ranges.
+        
+        **Examples:**
+        - **Round 1**: 50 User licenses (Jan 2024 - Dec 2024)
+        - **Round 2**: 25 User licenses (Mar 2024 - Feb 2025) 
+        - **Round 3**: 10 Relay licenses (Jun 2024 - May 2025)
+        
+        **Benefits:**
+        ✅ Different start/end dates for each round  
+        ✅ Different license counts per round  
+        ✅ Different product types per round  
+        ✅ Automatic aggregation in dashboards  
+        ✅ Individual tracking and management  
+        
+        **Use the 'Quick Add Another License Round' section below for faster workflow!**
+        """)
+    
     # Load companies, partners, and product codes from database
     db = DatabaseConnection()
     companies = db.get_active_companies()
@@ -232,6 +252,116 @@ def add_license_dialog():
             if st.form_submit_button("❌ Cancel", use_container_width=True):
                 st.session_state.show_add_form = False
                 st.rerun()
+
+    # Add Quick Add Another section after the form
+    st.markdown("---")
+    st.subheader("🔄 Quick Add Another License Round")
+    st.info("💡 **Tip**: Use this to quickly add another license round for the same entity with different dates")
+    
+    with st.form("quick_add_form", clear_on_submit=True):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Pre-select the same entity if available
+            if entity_options:
+                entity_display_options = [f"🏢 {entity['name']}" if entity['type'] == 'company' else f"🤝 {entity['name']}" for entity in entity_options]
+                quick_entity = st.selectbox(
+                    "Entity",
+                    entity_display_options,
+                    index=entity_display_options.index(selected_entity_display) if 'selected_entity_display' in locals() else 0,
+                    key="quick_entity"
+                )
+                
+                # Find the selected entity
+                quick_entity_index = entity_display_options.index(quick_entity)
+                quick_entity_obj = entity_options[quick_entity_index]
+                
+                if quick_entity_obj['type'] == 'company':
+                    quick_company_id = quick_entity_obj['id']
+                    quick_partner_id = None
+                else:
+                    quick_company_id = None
+                    quick_partner_id = quick_entity_obj['id']
+            else:
+                st.error("No entities available")
+                st.stop()
+        
+        with col2:
+            # Pre-select the same product code if available
+            if product_code_options:
+                product_display_options = [f"{pc['code']} - {pc['label']}" for pc in product_code_options]
+                quick_product = st.selectbox(
+                    "Product Code",
+                    product_display_options,
+                    index=product_display_options.index(selected_product_display) if 'selected_product_display' in locals() else 0,
+                    key="quick_product"
+                )
+                
+                # Find the selected product code
+                quick_product_index = product_display_options.index(quick_product)
+                quick_product_obj = product_code_options[quick_product_index]
+                quick_product_code_id = quick_product_obj['id']
+            else:
+                st.error("No product codes available")
+                st.stop()
+        
+        with col3:
+            # Pre-select the same currency if available
+            currency_options = ["GBP", "USD", "EUR", "CAD", "AUD", "JPY", "CHF", "SEK", "NOK", "DKK"]
+            quick_currency = st.selectbox(
+                "Currency",
+                currency_options,
+                index=currency_options.index(new_currency) if 'new_currency' in locals() else 0,
+                key="quick_currency"
+            )
+        
+        # Second row for dates and license details
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            quick_start_date = st.date_input("Start Date", value=datetime.now().date(), key="quick_start_date")
+        
+        with col2:
+            quick_end_date = st.date_input("End Date", value=datetime.now().date() + timedelta(days=365), key="quick_end_date")
+        
+        with col3:
+            quick_licenses = st.number_input("Number of Licenses", min_value=1, value=10, key="quick_licenses")
+        
+        with col4:
+            quick_cost = st.number_input("Cost per License", min_value=0.01, value=540.0, step=1.0, format="%.2f", key="quick_cost")
+        
+        # Submit button for quick add
+        if st.form_submit_button("🚀 Quick Add License Round", type="secondary", use_container_width=True):
+            if quick_start_date and quick_end_date and quick_licenses > 0 and quick_cost > 0:
+                if quick_end_date >= quick_start_date:
+                    quick_total_cost = quick_licenses * quick_cost
+                    
+                    # Save to database
+                    quick_license_data = {
+                        'company_id': quick_company_id,
+                        'partner_id': quick_partner_id,
+                        'product_code_id': quick_product_code_id,
+                        'start_date': quick_start_date,
+                        'end_date': quick_end_date,
+                        'number_of_licenses': int(quick_licenses),
+                        'cost_per_license': quick_cost,
+                        'total_cost': quick_total_cost,
+                        'currency': quick_currency,
+                        'status': 'Active'
+                    }
+                    
+                    if db.insert_license(quick_license_data):
+                        st.success(f"✅ Quick license round added successfully!")
+                        # Clear cache and refresh data from database
+                        load_license_data.clear()
+                        st.session_state.df_data = None
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to save quick license to database")
+                else:
+                    st.error("❌ End date must be after start date!")
+            else:
+                st.error("❌ Please fill in all required fields!")
 
 # Bulk Import Dialog  
 @st.dialog("📥 Bulk Import Licences")
@@ -750,16 +880,18 @@ if not display_df.empty:
 
 # Show data table - editable for admins, read-only for viewers
 if can_edit:
-    # Editable data for admins - show comprehensive columns but make key ones editable (include id for updates)
-    edit_columns = ['id', 'company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
+    # Editable data for admins - show comprehensive columns but make key ones editable (exclude id for space)
+    edit_columns = ['company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
                    'user_count', 'active_users', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
     available_edit_columns = [col for col in edit_columns if col in display_df.columns]
-    st.session_state.original_df = display_df[available_edit_columns].copy()
+    
+    # Keep ID in original_df for database updates but don't display it
+    st.session_state.original_df = display_df[available_edit_columns + ['id'] if 'id' in display_df.columns else available_edit_columns].copy()
+    
     edited_df = st.data_editor(
         display_df[available_edit_columns],
         use_container_width=True,
         column_config={
-            'id': st.column_config.NumberColumn('ID', disabled=True, width="small"),
             'company': st.column_config.TextColumn('Company', disabled=True, width="medium"),  # Read-only (complex to change)
             'partner': st.column_config.TextColumn('Partner', disabled=True, width="medium"),  # Read-only (complex to change)
             'product_label': st.column_config.TextColumn('Product Type', disabled=True, width="medium"),  # Read-only (FK relationship)
@@ -796,9 +928,9 @@ if can_edit:
             else:
                 # Compare edited_df with original to find changes
                 for idx in edited_df.index:
-                    # Get the license ID
-                    if 'id' in display_df.columns:
-                        license_id = display_df.loc[idx, 'id']
+                    # Get the license ID from original_df (which includes ID)
+                    if 'id' in st.session_state.original_df.columns:
+                        license_id = st.session_state.original_df.loc[idx, 'id']
                         
                         # Check each editable field for changes
                         changes = {}
