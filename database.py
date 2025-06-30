@@ -327,6 +327,68 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
+    def get_active_relay_devices(self, user_role=None, user_company_id=None, user_partner_id=None):
+        """Fetch active relay devices by company and partner based on 14-day activity"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # Build role-based filtering
+            role_filter = ""
+            if user_role == "Company User" and user_company_id:
+                role_filter = f"AND u.company_id = {user_company_id}"
+            elif user_role == "Partner Admin" and user_partner_id:
+                role_filter = f"AND u.partner_id = {user_partner_id}"
+            # Admin role sees all data, so no additional filter needed
+            
+            # Query for company-based relay devices
+            company_query = f'''
+            SELECT 
+                u.company_id,
+                c.company_name as entity_name,
+                'Company' as entity_type,
+                COUNT(DISTINCT ram.relay_id) AS active_relay_devices
+            FROM fido1.relay_activity_monitor ram
+            JOIN fido1.logger_sessions ls ON ram.session_id = ls.session_id
+            JOIN fido1.users_portal u ON ls.deployed_by = u.id
+            JOIN fido1.companies c ON u.company_id = c.id
+            WHERE ram.create_time >= CURDATE() - INTERVAL 14 DAY
+            {role_filter}
+            GROUP BY u.company_id, c.company_name
+            '''
+            
+            # Query for partner-based relay devices
+            partner_query = f'''
+            SELECT 
+                u.partner_id,
+                p.partner_name as entity_name,
+                'Partner' as entity_type,
+                COUNT(DISTINCT ram.relay_id) AS active_relay_devices
+            FROM fido1.relay_activity_monitor ram
+            JOIN fido1.logger_sessions ls ON ram.session_id = ls.session_id
+            JOIN fido1.users_portal u ON ls.deployed_by = u.id
+            JOIN fido1.partners p ON u.partner_id = p.id
+            WHERE ram.create_time >= CURDATE() - INTERVAL 14 DAY
+            {role_filter}
+            GROUP BY u.partner_id, p.partner_name
+            '''
+            
+            # Execute both queries and combine results
+            company_df = pd.read_sql(company_query, connection)
+            partner_df = pd.read_sql(partner_query, connection)
+            
+            # Combine results
+            combined_df = pd.concat([company_df, partner_df], ignore_index=True)
+            return combined_df
+            
+        except Exception as e:
+            print(f"Error fetching active relay devices: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
 # Example usage for when you're ready to switch from mock data:
 """
 # In your app.py, replace the generate_mock_data() function with:

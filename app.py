@@ -800,6 +800,43 @@ if not user_count_df.empty and not filtered_df.empty:
     if columns_to_drop:
         filtered_df = filtered_df.drop(columns=columns_to_drop)
 
+# Fetch active relay devices data
+current_user = auth_manager.get_current_user()
+user_role = current_user.get('role', 'Admin') if current_user else 'Admin'
+user_company_id = current_user.get('company_id') if current_user else None
+user_partner_id = current_user.get('partner_id') if current_user else None
+
+active_relay_devices_df = db.get_active_relay_devices(
+    user_role=user_role,
+    user_company_id=user_company_id,
+    user_partner_id=user_partner_id
+)
+
+# Merge active relay devices data with filtered_df
+if not active_relay_devices_df.empty and not filtered_df.empty:
+    # Ensure entity column exists before merge
+    if 'entity' not in filtered_df.columns:
+        filtered_df['entity'] = filtered_df.apply(lambda row: 
+            row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+            else row.get('company', ''), axis=1)
+    
+    filtered_df = filtered_df.merge(active_relay_devices_df[['entity_name', 'active_relay_devices']], left_on='entity', right_on='entity_name', how='left')
+    # Use active_relay_devices_y if it exists, else fill with 0
+    if 'active_relay_devices_y' in filtered_df.columns:
+        filtered_df = filtered_df.assign(active_relay_devices=filtered_df['active_relay_devices_y'].fillna(0))
+    elif 'active_relay_devices' not in filtered_df.columns:
+        filtered_df = filtered_df.assign(active_relay_devices=0)
+    else:
+        filtered_df = filtered_df.assign(active_relay_devices=filtered_df['active_relay_devices'].fillna(0))
+    # Cleanup extra columns from merge
+    columns_to_drop = [col for col in ['active_relay_devices_x', 'active_relay_devices_y', 'entity_name'] if col in filtered_df.columns]
+    if columns_to_drop:
+        filtered_df = filtered_df.drop(columns=columns_to_drop)
+else:
+    # Ensure active_relay_devices column exists
+    if 'active_relay_devices' not in filtered_df.columns:
+        filtered_df = filtered_df.assign(active_relay_devices=0)
+
 # Key metrics
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -830,6 +867,43 @@ with col5:
     else:
         total_revenue = filtered_df['total_cost'].sum() if not filtered_df.empty else 0
         st.metric("Total Revenue", f"£{total_revenue:,.0f}", help="Total revenue from all licenses")
+
+# Add active relay devices metric in a new row
+col1, col2, col3, col4, col5 = st.columns(5)
+
+with col1:
+    active_relay_devices = int(filtered_df['active_relay_devices'].sum()) if not filtered_df.empty else 0
+    st.metric("🔗 Active Relay Devices", f"{active_relay_devices:,}", help="Unique relay devices with activity in the last 14 days")
+
+with col2:
+    # Show relay utilization if we have relay licenses
+    if st.session_state.selected_dashboard == 'Relay Licenses' and not filtered_df.empty:
+        relay_licenses = filtered_df['number_of_licenses'].sum()
+        relay_utilization = (active_relay_devices / relay_licenses * 100) if relay_licenses > 0 else 0
+        st.metric("🔗 Relay Utilization", f"{relay_utilization:.1f}%", help="Percentage of relay licenses being actively used")
+    else:
+        st.metric("📊 Dashboard", st.session_state.selected_dashboard, help="Current dashboard view")
+
+with col3:
+    # Show total entities
+    total_entities = len(filtered_df['entity'].unique()) if not filtered_df.empty else 0
+    st.metric("🏢 Total Entities", f"{total_entities:,}", help="Number of companies/partners with licenses")
+
+with col4:
+    # Show average utilization across all entities
+    if not filtered_df.empty:
+        avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+        st.metric("📈 Avg Utilization", f"{avg_utilization:.1f}%", help="Average license utilization across all entities")
+    else:
+        st.metric("📈 Avg Utilization", "0%", help="Average license utilization across all entities")
+
+with col5:
+    # Show currency breakdown if multiple currencies
+    if not filtered_df.empty and 'currency' in filtered_df.columns:
+        unique_currencies = len(filtered_df['currency'].unique())
+        st.metric("💰 Currencies", f"{unique_currencies}", help="Number of different currencies in use")
+    else:
+        st.metric("💰 Currencies", "1", help="Number of different currencies in use")
 
 st.markdown("---")
 
@@ -882,7 +956,7 @@ if not display_df.empty:
 if can_edit:
     # Editable data for admins - show comprehensive columns but make key ones editable (exclude id for space)
     edit_columns = ['company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
-                   'user_count', 'active_users', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
+                   'user_count', 'active_users', 'active_relay_devices', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
     available_edit_columns = [col for col in edit_columns if col in display_df.columns]
     
     # Keep ID in original_df for database updates but don't display it
@@ -900,6 +974,7 @@ if can_edit:
             'number_of_licenses': st.column_config.NumberColumn('Licences', min_value=1, required=True, width="small"),
             'user_count': st.column_config.NumberColumn('Total Users', disabled=True, width="small"),  # Calculated field
             'active_users': st.column_config.NumberColumn('Active Users', disabled=True, width="small"),  # Calculated field
+            'active_relay_devices': st.column_config.NumberColumn('Active Relay Devices', disabled=True, width="small"),  # Calculated field
             'active_utilization_pct': st.column_config.ProgressColumn(
                 'Active Utilization %',
                 help='Percentage of licences being actively used (calculated field)',
@@ -977,7 +1052,7 @@ if can_edit:
 else:
     # Read-only view for viewers - show comprehensive data
     view_columns = ['company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
-                   'user_count', 'active_users', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
+                   'user_count', 'active_users', 'active_relay_devices', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
     
     # Only include columns that exist in the dataframe
     available_view_columns = [col for col in view_columns if col in display_df.columns]
@@ -994,6 +1069,7 @@ else:
             'number_of_licenses': st.column_config.NumberColumn('Licences', width="small"),
             'user_count': st.column_config.NumberColumn('Total Users', width="small"),
             'active_users': st.column_config.NumberColumn('Active Users', width="small"),
+            'active_relay_devices': st.column_config.NumberColumn('Active Relay Devices', width="small"),
             'active_utilization_pct': st.column_config.ProgressColumn(
                 'Active Utilization %',
                 help='Percentage of licences being actively used',
@@ -1030,15 +1106,15 @@ if not filtered_df.empty:
             # Show relay deployment vs licenses
             relay_summary = filtered_df.groupby('entity_with_type').agg({
                 'number_of_licenses': 'sum',
-                'active_users': 'sum'  # For relays, active_users might represent deployed instances
+                'active_relay_devices': 'sum'  # Use active_relay_devices instead of active_users
             }).reset_index()
             
             if not relay_summary.empty:
                 fig_relay = px.bar(
                     relay_summary,
                     x='entity_with_type',
-                    y=['number_of_licenses', 'active_users'],
-                    title="Relay Licenses vs Deployed Instances",
+                    y=['number_of_licenses', 'active_relay_devices'],
+                    title="Relay Licenses vs Active Devices (Last 14 Days)",
                     barmode='group',
                     labels={'value': 'Count', 'variable': 'Type'}
                 )
@@ -1048,18 +1124,76 @@ if not filtered_df.empty:
                 st.info("📊 No relay data available")
         
         with col2:
-            st.subheader("🔗 Relay Cost Analysis")
-            # Show relay cost distribution
-            if 'cost_per_license' in filtered_df.columns:
-                fig_cost = px.histogram(
-                    filtered_df,
-                    x='cost_per_license',
-                    title="Relay License Cost Distribution",
-                    labels={'cost_per_license': 'Cost per Relay License', 'count': 'Number of Licenses'}
+            st.subheader("🔗 Relay Device Utilization")
+            # Show relay device utilization rates
+            relay_util = filtered_df.copy()
+            relay_util['relay_utilization_rate'] = (relay_util['active_relay_devices'] / relay_util['number_of_licenses'] * 100).round(1)
+            
+            if not relay_util.empty:
+                fig_util = px.scatter(
+                    relay_util,
+                    x='number_of_licenses',
+                    y='active_relay_devices',
+                    size='relay_utilization_rate',
+                    hover_name='entity_with_type',
+                    title="Relay License vs Active Devices",
+                    labels={'number_of_licenses': 'Relay Licenses Available', 'active_relay_devices': 'Active Relay Devices'}
                 )
-                st.plotly_chart(fig_cost, use_container_width=True)
+                # Add diagonal line for 100% utilization
+                max_val = max(relay_util['number_of_licenses'].max(), relay_util['active_relay_devices'].max())
+                if max_val > 0:
+                    fig_util.add_shape(
+                        type="line", line=dict(dash="dash", color="red"),
+                        x0=0, y0=0, x1=max_val, y1=max_val
+                    )
+                    fig_util.add_annotation(
+                        x=max_val*0.7, y=max_val*0.8,
+                        text="100% Utilization Line",
+                        showarrow=False,
+                        font=dict(color="red", size=10)
+                    )
+                st.plotly_chart(fig_util, use_container_width=True)
             else:
-                st.info("📊 No cost data available")
+                st.info("📊 No relay utilization data available")
+        
+        # Add relay device summary table
+        st.subheader("🔗 Relay Device Summary")
+        if not filtered_df.empty:
+            relay_summary_table = filtered_df.groupby('entity_with_type').agg({
+                'number_of_licenses': 'sum',
+                'active_relay_devices': 'sum',
+                'cost_per_license': 'mean',
+                'total_cost': 'sum'
+            }).reset_index()
+            
+            relay_summary_table['relay_utilization_pct'] = (relay_summary_table['active_relay_devices'] / relay_summary_table['number_of_licenses'] * 100).round(1)
+            relay_summary_table['avg_cost_per_device'] = (relay_summary_table['total_cost'] / relay_summary_table['active_relay_devices']).round(2)
+            
+            # Replace infinite values with 0
+            relay_summary_table = relay_summary_table.replace([np.inf, -np.inf], 0)
+            
+            st.dataframe(
+                relay_summary_table,
+                use_container_width=True,
+                column_config={
+                    'entity_with_type': st.column_config.TextColumn('Entity', width="medium"),
+                    'number_of_licenses': st.column_config.NumberColumn('Relay Licenses', width="small"),
+                    'active_relay_devices': st.column_config.NumberColumn('Active Devices', width="small"),
+                    'relay_utilization_pct': st.column_config.ProgressColumn(
+                        'Device Utilization %',
+                        help='Percentage of relay licenses with active devices',
+                        min_value=0,
+                        max_value=150,
+                        format='%.1f%%',
+                        width="medium"
+                    ),
+                    'cost_per_license': st.column_config.NumberColumn('Avg Cost/License', format='%.2f', width="small"),
+                    'total_cost': st.column_config.NumberColumn('Total Cost', format='%.2f', width="small"),
+                    'avg_cost_per_device': st.column_config.NumberColumn('Cost/Active Device', format='%.2f', width="small")
+                }
+            )
+        else:
+            st.info("📊 No relay data available for summary table")
     
     elif st.session_state.selected_dashboard == 'User Licenses':
         # User-specific charts
@@ -1373,12 +1507,32 @@ if not filtered_df.empty:
             active_relay_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
             st.metric("Active Relay Licenses", f"{active_relay_licenses:,}")
         
+        # Add relay device metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_active_devices = filtered_df['active_relay_devices'].sum()
+            st.metric("🔗 Active Relay Devices", f"{total_active_devices:,}", help="Devices with activity in last 14 days")
+        
+        with col2:
+            relay_utilization = (total_active_devices / total_relay_licenses * 100) if total_relay_licenses > 0 else 0
+            st.metric("🔗 Device Utilization", f"{relay_utilization:.1f}%", help="Percentage of licenses with active devices")
+        
+        with col3:
+            avg_cost_per_device = (filtered_df['total_cost'].sum() / total_active_devices) if total_active_devices > 0 else 0
+            st.metric("💰 Cost per Active Device", f"£{avg_cost_per_device:,.0f}", help="Average cost per active relay device")
+        
         # Show top relay customers
         if not filtered_df.empty:
-            top_relay_customers = filtered_df.groupby('entity_with_type')['number_of_licenses'].sum().nlargest(5)
+            top_relay_customers = filtered_df.groupby('entity_with_type').agg({
+                'number_of_licenses': 'sum',
+                'active_relay_devices': 'sum'
+            }).nlargest(5, 'number_of_licenses')
+            
             st.write("**Top 5 Relay Customers:**")
-            for entity, licenses in top_relay_customers.items():
-                st.write(f"• {entity}: {licenses:,} licenses")
+            for entity, data in top_relay_customers.iterrows():
+                utilization = (data['active_relay_devices'] / data['number_of_licenses'] * 100) if data['number_of_licenses'] > 0 else 0
+                st.write(f"• {entity}: {data['number_of_licenses']:,} licenses ({data['active_relay_devices']:,} active devices - {utilization:.1f}% utilization)")
     
     elif st.session_state.selected_dashboard == 'User Licenses':
         st.subheader("👥 User License Summary")
