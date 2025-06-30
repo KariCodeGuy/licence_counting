@@ -28,6 +28,8 @@ if 'delete_license_id' not in st.session_state:
     st.session_state.delete_license_id = None
 if 'df_data' not in st.session_state:
     st.session_state.df_data = None
+if 'selected_dashboard' not in st.session_state:
+    st.session_state.selected_dashboard = 'All Licenses'
 
 # --- Modal dialog for deleting licences ---
 @st.dialog("🗑️ Delete Licence")
@@ -392,12 +394,31 @@ else:
     st.write("DataFrame loaded.")  # Placeholder to fix indentation error
 
 # Dashboard title
-st.title("📊 License Management Dashboard")
+dashboard_title = f"📊 {st.session_state.selected_dashboard} Dashboard"
+st.title(dashboard_title)
 st.markdown("---")
 
 # Sidebar filters
 with st.sidebar:
     st.header("🔍 Filters")
+    
+    # Dashboard Selector
+    st.subheader("📊 Dashboard Type")
+    dashboard_options = ['All Licenses', 'Relay Licenses', 'User Licenses']
+    selected_dashboard = st.selectbox(
+        "Select Dashboard",
+        options=dashboard_options,
+        index=dashboard_options.index(st.session_state.selected_dashboard),
+        key="dashboard_selector",
+        help="Choose which type of licenses to view"
+    )
+    
+    # Update session state when dashboard changes
+    if selected_dashboard != st.session_state.selected_dashboard:
+        st.session_state.selected_dashboard = selected_dashboard
+        st.rerun()
+    
+    st.markdown("---")
     
     # Quick Actions (moved above filters)
     st.subheader("⚡ Quick Actions")
@@ -473,6 +494,18 @@ with st.sidebar:
         else:
             currency_filter = []
 
+        # Product code filter
+        if not df.empty and 'product_code' in df.columns:
+            product_options = sorted(df['product_code'].dropna().unique())
+            product_filter = st.multiselect(
+                "Product Code",
+                options=product_options,
+                default=product_options,
+                help="Filter by specific product codes"
+            )
+        else:
+            product_filter = []
+
 # User info and logout
 current_user = auth_manager.get_current_user()
 if current_user:
@@ -501,16 +534,36 @@ elif len(date_range) == 2:
             row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
             else row.get('company', ''), axis=1)
     
+    # Auto-filter by product code based on dashboard selection
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        # Filter for Relay licenses (assuming 'REL' is the product code for Relay)
+        dashboard_product_filter = ['REL'] if 'product_code' in df.columns else []
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        # Filter for User licenses (assuming 'SUB' or other codes are for User licenses)
+        dashboard_product_filter = ['SUB', 'USR', 'USR_LIC'] if 'product_code' in df.columns else []
+    else:
+        # All Licenses - no product code filtering
+        dashboard_product_filter = []
+    
+    # Apply dashboard-specific product filtering
+    if dashboard_product_filter and 'product_code' in df.columns:
+        df_filtered_by_dashboard = df[df['product_code'].isin(dashboard_product_filter)]
+    else:
+        df_filtered_by_dashboard = df
+    
     base_filter = (
-        (df['start_date'] >= date_range[0]) & 
-        (df['start_date'] <= date_range[1]) &
-        (df['entity'].isin(companies)) &
-        (df['status'].isin(status_filter))
+        (df_filtered_by_dashboard['start_date'] >= date_range[0]) & 
+        (df_filtered_by_dashboard['start_date'] <= date_range[1]) &
+        (df_filtered_by_dashboard['entity'].isin(companies)) &
+        (df_filtered_by_dashboard['status'].isin(status_filter))
     )
     # Add currency filter if available
-    if currency_filter and 'currency' in df.columns:
-        base_filter = base_filter & (df['currency'].isin(currency_filter))
-    filtered_df = df[base_filter].copy()
+    if currency_filter and 'currency' in df_filtered_by_dashboard.columns:
+        base_filter = base_filter & (df_filtered_by_dashboard['currency'].isin(currency_filter))
+    # Add product code filter if available
+    if product_filter and 'product_code' in df_filtered_by_dashboard.columns:
+        base_filter = base_filter & (df_filtered_by_dashboard['product_code'].isin(product_filter))
+    filtered_df = df_filtered_by_dashboard[base_filter].copy()
 else:
     # Create entity column for filtering if it doesn't exist
     if 'entity' not in df.columns:
@@ -518,14 +571,34 @@ else:
             row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
             else row.get('company', ''), axis=1)
     
+    # Auto-filter by product code based on dashboard selection
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        # Filter for Relay licenses (assuming 'REL' is the product code for Relay)
+        dashboard_product_filter = ['REL'] if 'product_code' in df.columns else []
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        # Filter for User licenses (assuming 'SUB' or other codes are for User licenses)
+        dashboard_product_filter = ['SUB', 'USR', 'USR_LIC'] if 'product_code' in df.columns else []
+    else:
+        # All Licenses - no product code filtering
+        dashboard_product_filter = []
+    
+    # Apply dashboard-specific product filtering
+    if dashboard_product_filter and 'product_code' in df.columns:
+        df_filtered_by_dashboard = df[df['product_code'].isin(dashboard_product_filter)]
+    else:
+        df_filtered_by_dashboard = df
+    
     base_filter = (
-        (df['entity'].isin(companies)) &
-        (df['status'].isin(status_filter))
+        (df_filtered_by_dashboard['entity'].isin(companies)) &
+        (df_filtered_by_dashboard['status'].isin(status_filter))
     )
     # Add currency filter if available
-    if currency_filter and 'currency' in df.columns:
-        base_filter = base_filter & (df['currency'].isin(currency_filter))
-    filtered_df = df[base_filter].copy()
+    if currency_filter and 'currency' in df_filtered_by_dashboard.columns:
+        base_filter = base_filter & (df_filtered_by_dashboard['currency'].isin(currency_filter))
+    # Add product code filter if available
+    if product_filter and 'product_code' in df_filtered_by_dashboard.columns:
+        base_filter = base_filter & (df_filtered_by_dashboard['product_code'].isin(product_filter))
+    filtered_df = df_filtered_by_dashboard[base_filter].copy()
 
 # Create unified entity column for merging with user/active user data
 if not filtered_df.empty:
@@ -616,9 +689,27 @@ with col4:
     active_licences = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
     st.metric("Active Licences", f"{active_licences:,}")
 
-# col5 is left for future metrics if needed
+with col5:
+    # Dashboard-specific metric
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        avg_relay_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
+        st.metric("Avg Relay Cost", f"£{avg_relay_cost:,.0f}", help="Average cost per Relay license")
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        avg_user_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
+        st.metric("Avg User Cost", f"£{avg_user_cost:,.0f}", help="Average cost per User license")
+    else:
+        total_revenue = filtered_df['total_cost'].sum() if not filtered_df.empty else 0
+        st.metric("Total Revenue", f"£{total_revenue:,.0f}", help="Total revenue from all licenses")
 
 st.markdown("---")
+
+# Dashboard-specific information
+if st.session_state.selected_dashboard == 'Relay Licenses':
+    st.info("🔗 **Relay Licenses Dashboard**: Viewing data for Relay infrastructure licenses. These licenses control the number of Relay instances that can be deployed.")
+elif st.session_state.selected_dashboard == 'User Licenses':
+    st.info("👥 **User Licenses Dashboard**: Viewing data for user access licenses. These licenses control the number of users who can access the system.")
+else:
+    st.info("📊 **All Licenses Dashboard**: Viewing data for all license types combined.")
 
 # Data table
 st.subheader("License Details")
@@ -797,95 +888,185 @@ st.markdown("---")
 
 # Charts section
 if not filtered_df.empty:
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Licences vs Active Users")
-        # Focus on non-monetary metrics to avoid currency mixing
-        company_summary = filtered_df.groupby('entity_with_type').agg({
-            'number_of_licenses': 'sum',
-            'user_count': 'sum',
-            'active_users': 'sum'
-        }).reset_index()
+    # Dashboard-specific charts
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        # Relay-specific charts
+        col1, col2 = st.columns(2)
         
-        # Show top 10 entities by license count
-        top_companies = company_summary.nlargest(10, 'number_of_licenses') if not company_summary.empty else pd.DataFrame()
-        
-        if not top_companies.empty:
-            fig_scatter = px.scatter(
-                top_companies,
-                x='number_of_licenses',
-                y='active_users',
-                size='number_of_licenses',  # Use license count instead of revenue for sizing
-                hover_name='entity_with_type',
-                hover_data={'user_count': True},
-                title="Licences vs Active Users (bubble size = total licences)",
-                labels={'number_of_licenses': 'Number of Licences', 'active_users': 'Active Users'}
-            )
-            # Add diagonal line for 100% utilization
-            max_val = max(top_companies['number_of_licenses'].max(), top_companies['active_users'].max())
-            fig_scatter.add_shape(
-                type="line", line=dict(dash="dash", color="red"),
-                x0=0, y0=0, x1=max_val, y1=max_val
-            )
-            fig_scatter.add_annotation(
-                x=max_val*0.7, y=max_val*0.8,
-                text="100% Utilization Line",
-                showarrow=False,
-                font=dict(color="red", size=10)
-            )
-            st.plotly_chart(fig_scatter, use_container_width=True)
-        else:
-            st.info("📊 No data available for scatter plot")
-
-    with col2:
-        st.subheader("Revenue by Currency")
-        # Show revenue grouped by currency to avoid mixing currencies
-        if 'currency' in filtered_df.columns:
-            currency_revenue = filtered_df.groupby('currency').agg({
-                'total_cost': 'sum',
-                'number_of_licenses': 'sum'
+        with col1:
+            st.subheader("🔗 Relay Deployment Status")
+            # Show relay deployment vs licenses
+            relay_summary = filtered_df.groupby('entity_with_type').agg({
+                'number_of_licenses': 'sum',
+                'active_users': 'sum'  # For relays, active_users might represent deployed instances
             }).reset_index()
-            currency_revenue = currency_revenue.sort_values('total_cost', ascending=False)
             
-            if not currency_revenue.empty:
-                # Create currency labels with totals
-                currency_revenue['display_label'] = currency_revenue.apply(
-                    lambda row: f"{row['currency']}: {row['total_cost']:,.0f}", axis=1
-                )
-                
-                fig_bar = px.bar(
-                    currency_revenue,
-                    x='currency',
-                    y='total_cost',
-                    title="Total Revenue by Currency",
-                    labels={'total_cost': 'Revenue', 'currency': 'Currency'},
-                    text='total_cost'
-                )
-                fig_bar.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
-                fig_bar.update_xaxes(tickangle=0)
-                st.plotly_chart(fig_bar, use_container_width=True)
-            else:
-                st.info("📊 No data available for revenue chart")
-        else:
-            # Fallback for data without currency column
-            company_summary_with_revenue = filtered_df.groupby('entity_with_type').agg({
-                'total_cost': 'sum'
-            }).reset_index()
-            top_revenue_companies = company_summary_with_revenue.nlargest(10, 'total_cost')
-            
-            if not top_revenue_companies.empty:
-                fig_bar = px.bar(
-                    top_revenue_companies,
+            if not relay_summary.empty:
+                fig_relay = px.bar(
+                    relay_summary,
                     x='entity_with_type',
-                    y='total_cost',
-                    title="Top 10 Entities by Revenue",
-                    labels={'total_cost': 'Revenue', 'entity_with_type': 'Entity'}
+                    y=['number_of_licenses', 'active_users'],
+                    title="Relay Licenses vs Deployed Instances",
+                    barmode='group',
+                    labels={'value': 'Count', 'variable': 'Type'}
                 )
-                fig_bar.update_xaxes(tickangle=45)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                fig_relay.update_xaxes(tickangle=45)
+                st.plotly_chart(fig_relay, use_container_width=True)
             else:
-                st.info("📊 No data available for revenue chart")
+                st.info("📊 No relay data available")
+        
+        with col2:
+            st.subheader("🔗 Relay Cost Analysis")
+            # Show relay cost distribution
+            if 'cost_per_license' in filtered_df.columns:
+                fig_cost = px.histogram(
+                    filtered_df,
+                    x='cost_per_license',
+                    title="Relay License Cost Distribution",
+                    labels={'cost_per_license': 'Cost per Relay License', 'count': 'Number of Licenses'}
+                )
+                st.plotly_chart(fig_cost, use_container_width=True)
+            else:
+                st.info("📊 No cost data available")
+    
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        # User-specific charts
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("👥 User Utilization")
+            # Show user utilization rates
+            user_util = filtered_df.copy()
+            user_util['utilization_rate'] = (user_util['active_users'] / user_util['number_of_licenses'] * 100).round(1)
+            
+            if not user_util.empty:
+                fig_util = px.scatter(
+                    user_util,
+                    x='number_of_licenses',
+                    y='active_users',
+                    size='utilization_rate',
+                    hover_name='entity_with_type',
+                    title="User License Utilization",
+                    labels={'number_of_licenses': 'Licenses Available', 'active_users': 'Active Users'}
+                )
+                st.plotly_chart(fig_util, use_container_width=True)
+            else:
+                st.info("📊 No user data available")
+        
+        with col2:
+            st.subheader("👥 User Growth Trend")
+            # Show user growth over time
+            if 'start_date' in filtered_df.columns:
+                user_trend = filtered_df.groupby('start_date').agg({
+                    'number_of_licenses': 'sum',
+                    'user_count': 'sum'
+                }).reset_index()
+                
+                if not user_trend.empty:
+                    fig_trend = px.line(
+                        user_trend,
+                        x='start_date',
+                        y=['number_of_licenses', 'user_count'],
+                        title="User License Growth Over Time",
+                        labels={'value': 'Count', 'variable': 'Type'}
+                    )
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                else:
+                    st.info("📊 No trend data available")
+            else:
+                st.info("📊 No date data available")
+    
+    else:
+        # All Licenses - show original charts
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Licences vs Active Users")
+            # Focus on non-monetary metrics to avoid currency mixing
+            company_summary = filtered_df.groupby('entity_with_type').agg({
+                'number_of_licenses': 'sum',
+                'user_count': 'sum',
+                'active_users': 'sum'
+            }).reset_index()
+            
+            # Show top 10 entities by license count
+            top_companies = company_summary.nlargest(10, 'number_of_licenses') if not company_summary.empty else pd.DataFrame()
+            
+            if not top_companies.empty:
+                fig_scatter = px.scatter(
+                    top_companies,
+                    x='number_of_licenses',
+                    y='active_users',
+                    size='number_of_licenses',  # Use license count instead of revenue for sizing
+                    hover_name='entity_with_type',
+                    hover_data={'user_count': True},
+                    title="Licences vs Active Users (bubble size = total licences)",
+                    labels={'number_of_licenses': 'Number of Licences', 'active_users': 'Active Users'}
+                )
+                # Add diagonal line for 100% utilization
+                max_val = max(top_companies['number_of_licenses'].max(), top_companies['active_users'].max())
+                fig_scatter.add_shape(
+                    type="line", line=dict(dash="dash", color="red"),
+                    x0=0, y0=0, x1=max_val, y1=max_val
+                )
+                fig_scatter.add_annotation(
+                    x=max_val*0.7, y=max_val*0.8,
+                    text="100% Utilization Line",
+                    showarrow=False,
+                    font=dict(color="red", size=10)
+                )
+                st.plotly_chart(fig_scatter, use_container_width=True)
+            else:
+                st.info("📊 No data available for scatter plot")
+
+        with col2:
+            st.subheader("Revenue by Currency")
+            # Show revenue grouped by currency to avoid mixing currencies
+            if 'currency' in filtered_df.columns:
+                currency_revenue = filtered_df.groupby('currency').agg({
+                    'total_cost': 'sum',
+                    'number_of_licenses': 'sum'
+                }).reset_index()
+                currency_revenue = currency_revenue.sort_values('total_cost', ascending=False)
+                
+                if not currency_revenue.empty:
+                    # Create currency labels with totals
+                    currency_revenue['display_label'] = currency_revenue.apply(
+                        lambda row: f"{row['currency']}: {row['total_cost']:,.0f}", axis=1
+                    )
+                    
+                    fig_bar = px.bar(
+                        currency_revenue,
+                        x='currency',
+                        y='total_cost',
+                        title="Total Revenue by Currency",
+                        labels={'total_cost': 'Revenue', 'currency': 'Currency'},
+                        text='total_cost'
+                    )
+                    fig_bar.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+                    fig_bar.update_xaxes(tickangle=0)
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                else:
+                    st.info("📊 No data available for revenue chart")
+            else:
+                # Fallback for data without currency column
+                company_summary_with_revenue = filtered_df.groupby('entity_with_type').agg({
+                    'total_cost': 'sum'
+                }).reset_index()
+                top_revenue_companies = company_summary_with_revenue.nlargest(10, 'total_cost')
+                
+                if not top_revenue_companies.empty:
+                    fig_bar = px.bar(
+                        top_revenue_companies,
+                        x='entity_with_type',
+                        y='total_cost',
+                        title="Top 10 Entities by Revenue",
+                        labels={'total_cost': 'Revenue', 'entity_with_type': 'Entity'}
+                    )
+                    fig_bar.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                else:
+                    st.info("📊 No data available for revenue chart")
 
     # Timeline chart
     st.subheader("License Timeline")
@@ -904,29 +1085,14 @@ if not filtered_df.empty:
     fig_timeline.update_yaxes(categoryorder="total ascending")
     st.plotly_chart(fig_timeline, use_container_width=True)
 
-    # Currency breakdown (if multiple currencies exist)
-    if 'currency' in filtered_df.columns and len(filtered_df['currency'].unique()) > 1:
-        st.subheader("Revenue by Currency")
-        currency_breakdown = filtered_df.groupby('currency').agg({
-            'total_cost': 'sum',
-            'number_of_licenses': 'sum',
-            'cost_per_license': 'mean'
-        }).round(2).reset_index()
-        
-        # Display as a simple table
-        st.dataframe(
-            currency_breakdown,
-            use_container_width=True,
-            column_config={
-                'currency': st.column_config.TextColumn('Currency'),
-                'total_cost': st.column_config.NumberColumn('Total Revenue', format='%.2f'),
-                'number_of_licenses': st.column_config.NumberColumn('Total Licences'),
-                'cost_per_license': st.column_config.NumberColumn('Avg Cost/Licence (per year)', format='%.2f')
-            }
-        )
-
     # License utilization analysis
-    st.subheader("License Utilization Analysis")
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        st.subheader("🔗 Relay Utilization Analysis")
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        st.subheader("👥 User License Utilization Analysis")
+    else:
+        st.subheader("License Utilization Analysis")
+    
     col1, col2 = st.columns(2)
 
     with col1:
@@ -1053,4 +1219,86 @@ if not filtered_df.empty:
             st.info("📊 No data available for user activity chart")
 
 else:
-    st.info("📊 No data available for charts. Add some license records to see visualizations.") 
+    st.info("📊 No data available for charts. Add some license records to see visualizations.")
+
+# Dashboard-specific summary
+if not filtered_df.empty:
+    st.markdown("---")
+    
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        st.subheader("🔗 Relay License Summary")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_relay_licenses = filtered_df['number_of_licenses'].sum()
+            st.metric("Total Relay Licenses", f"{total_relay_licenses:,}")
+        
+        with col2:
+            avg_relay_cost = filtered_df['cost_per_license'].mean()
+            st.metric("Average Relay Cost", f"£{avg_relay_cost:,.0f}")
+        
+        with col3:
+            active_relay_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
+            st.metric("Active Relay Licenses", f"{active_relay_licenses:,}")
+        
+        # Show top relay customers
+        if not filtered_df.empty:
+            top_relay_customers = filtered_df.groupby('entity_with_type')['number_of_licenses'].sum().nlargest(5)
+            st.write("**Top 5 Relay Customers:**")
+            for entity, licenses in top_relay_customers.items():
+                st.write(f"• {entity}: {licenses:,} licenses")
+    
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        st.subheader("👥 User License Summary")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_user_licenses = filtered_df['number_of_licenses'].sum()
+            st.metric("Total User Licenses", f"{total_user_licenses:,}")
+        
+        with col2:
+            total_users = filtered_df['user_count'].sum()
+            st.metric("Total Users", f"{total_users:,}")
+        
+        with col3:
+            avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+            st.metric("Average Utilization", f"{avg_utilization:.1f}%")
+        
+        # Show utilization insights
+        if not filtered_df.empty:
+            over_utilized = filtered_df[filtered_df['active_users'] > filtered_df['number_of_licenses']]
+            under_utilized = filtered_df[filtered_df['active_users'] < filtered_df['number_of_licenses'] * 0.7]
+            
+            if not over_utilized.empty:
+                st.warning(f"⚠️ **{len(over_utilized)} entities** are over-utilizing their user licenses")
+            if not under_utilized.empty:
+                st.info(f"ℹ️ **{len(under_utilized)} entities** have low user license utilization")
+    
+    else:
+        # All Licenses summary
+        st.subheader("📊 Overall License Summary")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_licenses = filtered_df['number_of_licenses'].sum()
+            st.metric("Total Licenses", f"{total_licenses:,}")
+        
+        with col2:
+            total_revenue = filtered_df['total_cost'].sum()
+            st.metric("Total Revenue", f"£{total_revenue:,.0f}")
+        
+        with col3:
+            active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
+            st.metric("Active Licenses", f"{active_licenses:,}")
+        
+        # Show product breakdown
+        if 'product_code' in filtered_df.columns:
+            product_breakdown = filtered_df.groupby('product_code').agg({
+                'number_of_licenses': 'sum',
+                'total_cost': 'sum'
+            }).reset_index()
+            
+            if not product_breakdown.empty:
+                st.write("**License Breakdown by Product:**")
+                for _, row in product_breakdown.iterrows():
+                    st.write(f"• {row['product_code']}: {row['number_of_licenses']:,} licenses (£{row['total_cost']:,.0f})") 
