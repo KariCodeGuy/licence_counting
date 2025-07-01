@@ -13,9 +13,61 @@ auth_manager.require_auth()
 # Page configuration
 st.set_page_config(
     page_title="License Management Dashboard",
-    page_icon="📊",
-    layout="wide"
+    page_icon="��",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+        margin-bottom: 1rem;
+    }
+    .action-button {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    .sidebar-section {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    .status-active {
+        color: #28a745;
+        font-weight: bold;
+    }
+    .status-expired {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    .utilization-high {
+        color: #28a745;
+    }
+    .utilization-medium {
+        color: #ffc107;
+    }
+    .utilization-low {
+        color: #dc3545;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state first
 if 'show_add_form' not in st.session_state:
@@ -523,17 +575,66 @@ if df is None or df.empty:
 else:
     st.write("DataFrame loaded.")  # Placeholder to fix indentation error
 
-# Dashboard title
-dashboard_title = f"📊 {st.session_state.selected_dashboard} Dashboard"
-st.title(dashboard_title)
-st.markdown("---")
+# Main header with gradient background
+st.markdown(f"""
+<div class="main-header">
+    <h1 style="margin: 0; font-size: 2.5rem;">📊 {st.session_state.selected_dashboard} Dashboard</h1>
+    <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">License Management & Analytics Platform</p>
+</div>
+""", unsafe_allow_html=True)
 
-# Sidebar filters
+# Sidebar - Redesigned for better UX
 with st.sidebar:
-    st.header("🔍 Filters")
+    # User info at the top
+    current_user = auth_manager.get_current_user()
+    if current_user:
+        st.markdown("""
+        <div class="sidebar-section">
+            <h4>👤 User Info</h4>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write(f"**{current_user['display_name']}**")
+        st.write(f"🔐 {current_user['role'].title()} Access")
+        
+        if st.button("🚪 Logout", use_container_width=True):
+            auth_manager.logout()
+    
+    st.markdown("---")
+    
+    # Quick Actions Section
+    st.markdown("""
+    <div class="sidebar-section">
+        <h4>⚡ Quick Actions</h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    can_edit = current_user and 'edit' in current_user.get('permissions', [])
+    
+    if can_edit:
+        if st.button("➕ Add License", type="primary", use_container_width=True):
+            st.session_state.show_add_form = True
+        
+        if st.button("📥 Import CSV", use_container_width=True):
+            st.session_state.show_import = True
+    else:
+        st.button("➕ Add License", disabled=True, help="Admin access required", use_container_width=True)
+        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True)
+    
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        load_license_data.clear()
+        st.session_state.df_data = None
+        st.success("✅ Data refreshed!")
+        st.rerun()
+    
+    st.markdown("---")
     
     # Dashboard Selector
-    st.subheader("📊 Dashboard Type")
+    st.markdown("""
+    <div class="sidebar-section">
+        <h4>📊 Dashboard Type</h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
     dashboard_options = ['All Licenses', 'Relay Licenses', 'User Licenses']
     selected_dashboard = st.selectbox(
         "Select Dashboard",
@@ -550,104 +651,74 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Quick Actions (moved above filters)
-    st.subheader("⚡ Quick Actions")
-    current_user = auth_manager.get_current_user()
-    can_edit = current_user and 'edit' in current_user.get('permissions', [])
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if can_edit:
-            if st.button("➕ Add License", type="primary", use_container_width=True):
-                st.session_state.show_add_form = True
-        else:
-            st.button("➕ Add License", disabled=True, help="Admin access required", use_container_width=True)
-
-    with col2:
-        if can_edit:
-            if st.button("📥 Import CSV", use_container_width=True):
-                st.session_state.show_import = True
-        else:
-            st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True)
-
-    if st.button("🔄 Refresh", use_container_width=True):
-        load_license_data.clear()
-        st.session_state.df_data = None
-        st.success("✅ Data refreshed!")
-        st.rerun()
-
-    st.markdown("---")
+    # Filters Section
+    st.markdown("""
+    <div class="sidebar-section">
+        <h4>🔍 Filters</h4>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Filter controls
     if not df.empty:
-        # Date range filter - use safe defaults
+        # Date range filter
         default_start = datetime.now().date() - timedelta(days=365)
         default_end = datetime.now().date()
-
+        
         date_range = st.date_input(
-            "Select Date Range",
-            value=(default_start, default_end)
+            "📅 Date Range",
+            value=(default_start, default_end),
+            help="Filter licenses by start date range"
         )
-
-        # Company filter - include both companies and partners
-        if not df.empty:
-            # Create entity column for filtering if it doesn't exist
-            if 'entity' not in df.columns:
-                df['entity'] = df.apply(lambda row: 
-                    row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
-                    else row.get('company', ''), axis=1)
-            
-            entity_options = sorted(df['entity'].dropna().unique()) if not df.empty else []
-            companies = st.multiselect(
-                "Companies/Partners",
-                options=entity_options,
-                default=entity_options,
-                help="Filter by companies or partners"
-            )
-
+        
+        # Entity filter
+        if 'entity' not in df.columns:
+            df['entity'] = df.apply(lambda row: 
+                row.get('partner', '') if pd.notna(row.get('partner')) and row.get('partner') 
+                else row.get('company', ''), axis=1)
+        
+        entity_options = sorted(df['entity'].dropna().unique()) if not df.empty else []
+        companies = st.multiselect(
+            "🏢 Companies/Partners",
+            options=entity_options,
+            default=entity_options,
+            help="Filter by companies or partners"
+        )
+        
         # Status filter
         status_options = df['status'].unique().tolist() if not df.empty else ['Active', 'Expired']
         status_filter = st.multiselect(
-            "Status",
+            "📊 Status",
             options=status_options,
-            default=status_options
+            default=status_options,
+            help="Filter by license status"
         )
-
+        
         # Currency filter
         if not df.empty and 'currency' in df.columns:
             currency_options = sorted(df['currency'].dropna().unique())
             currency_filter = st.multiselect(
-                "Currency",
+                "💰 Currency",
                 options=currency_options,
-                default=currency_options
+                default=currency_options,
+                help="Filter by currency"
             )
         else:
             currency_filter = []
-
+        
         # Product code filter
         if not df.empty and 'product_code' in df.columns:
             product_options = sorted(df['product_code'].dropna().unique())
             product_filter = st.multiselect(
-                "Product Code",
+                "🏷️ Product Code",
                 options=product_options,
                 default=product_options,
                 help="Filter by specific product codes"
             )
         else:
             product_filter = []
-
-# User info and logout
-current_user = auth_manager.get_current_user()
-if current_user:
-    st.sidebar.markdown("---")
-    st.sidebar.write(f"👤 **{current_user['display_name']}**")
-    st.sidebar.write(f"🔐 {current_user['role'].title()} Access")
     
-    if st.sidebar.button("🚪 Logout"):
-        auth_manager.logout()
-
-# Show live database indicator
-st.sidebar.success("🗄️ Using Live Database")
+    # Database status
+    st.markdown("---")
+    st.success("🗄️ Live Database Connected")
 
 # Convert DataFrame dates to proper format for filtering (only if not empty)
 if not df.empty:
@@ -858,83 +929,9 @@ else:
     if 'active_relay_devices' not in filtered_df.columns:
         filtered_df = filtered_df.assign(active_relay_devices=0)
 
-# Key metrics
-col1, col2, col3, col4, col5 = st.columns(5)
+# Main content area - Redesigned with better hierarchy
 
-with col1:
-    total_licences = filtered_df['number_of_licenses'].sum() if not filtered_df.empty else 0
-    st.metric("Total Licences", f"{total_licences:,}")
-
-with col2:
-    total_users = int(filtered_df['user_count'].sum()) if not filtered_df.empty else 0
-    st.metric("Total Users", f"{total_users:,}", help="Number of users created under a company or partner with a licence")
-
-with col3:
-    active_users = int(filtered_df['active_users'].sum()) if not filtered_df.empty else 0
-    st.metric("Active Users", f"{active_users:,}", help="Users with activity detected in the last 14 days")
-
-with col4:
-    active_licences = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
-    st.metric("Active Licences", f"{active_licences:,}")
-
-with col5:
-    # Dashboard-specific metric
-    if st.session_state.selected_dashboard == 'Relay Licenses':
-        avg_relay_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
-        st.metric("Avg Relay Cost", f"£{avg_relay_cost:,.0f}", help="Average cost per Relay license")
-    elif st.session_state.selected_dashboard == 'User Licenses':
-        avg_user_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
-        st.metric("Avg User Cost", f"£{avg_user_cost:,.0f}", help="Average cost per User license")
-    else:
-        total_revenue = filtered_df['total_cost'].sum() if not filtered_df.empty else 0
-        st.metric("Total Revenue", f"£{total_revenue:,.0f}", help="Total revenue from all licenses")
-
-# Add active relay devices metric in a new row
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    active_relay_devices = int(filtered_df['active_relay_devices'].sum()) if not filtered_df.empty else 0
-    st.metric("🔗 Active Relay Devices", f"{active_relay_devices:,}", help="Unique relay devices with activity in the last 14 days")
-
-with col2:
-    # Show relay utilization if we have relay licenses
-    if st.session_state.selected_dashboard == 'Relay Licenses' and not filtered_df.empty:
-        relay_licenses = filtered_df['number_of_licenses'].sum()
-        relay_utilization = (active_relay_devices / relay_licenses * 100) if relay_licenses > 0 else 0
-        st.metric("🔗 Relay Utilization", f"{relay_utilization:.1f}%", help="Percentage of relay licenses being actively used")
-    else:
-        st.metric("📊 Dashboard", st.session_state.selected_dashboard, help="Current dashboard view")
-
-with col3:
-    # Show total entities
-    total_entities = len(filtered_df['entity'].unique()) if not filtered_df.empty else 0
-    st.metric("🏢 Total Entities", f"{total_entities:,}", help="Number of companies/partners with licenses")
-
-with col4:
-    # Show average utilization across all entities
-    if not filtered_df.empty:
-        if st.session_state.selected_dashboard == 'Relay Licenses':
-            # For Relay licenses, use active relay devices for utilization
-            avg_utilization = (filtered_df['active_relay_devices'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
-            st.metric("📈 Avg Relay Utilization", f"{avg_utilization:.1f}%", help="Average relay device utilization across all entities")
-        else:
-            # For User licenses and All licenses, use active users for utilization
-            avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
-            st.metric("📈 Avg Utilization", f"{avg_utilization:.1f}%", help="Average license utilization across all entities")
-    else:
-        st.metric("📈 Avg Utilization", "0%", help="Average license utilization across all entities")
-
-with col5:
-    # Show currency breakdown if multiple currencies
-    if not filtered_df.empty and 'currency' in filtered_df.columns:
-        unique_currencies = len(filtered_df['currency'].unique())
-        st.metric("💰 Currencies", f"{unique_currencies}", help="Number of different currencies in use")
-    else:
-        st.metric("💰 Currencies", "1", help="Number of different currencies in use")
-
-st.markdown("---")
-
-# Dashboard-specific information
+# Dashboard info banner
 if st.session_state.selected_dashboard == 'Relay Licenses':
     st.info("🔗 **Relay Licenses Dashboard**: Viewing data for Relay infrastructure licenses. These licenses control the number of Relay instances that can be deployed.")
 elif st.session_state.selected_dashboard == 'User Licenses':
@@ -942,16 +939,162 @@ elif st.session_state.selected_dashboard == 'User Licenses':
 else:
     st.info("📊 **All Licenses Dashboard**: Viewing data for all license types combined.")
 
-# Data table
-st.subheader("License Details")
+# Primary Metrics Row - Most important KPIs
+st.subheader("📈 Key Performance Indicators")
+col1, col2, col3, col4 = st.columns(4)
 
-# Add editing tip
+with col1:
+    total_licences = filtered_df['number_of_licenses'].sum() if not filtered_df.empty else 0
+    st.metric(
+        label="Total Licenses", 
+        value=f"{total_licences:,}",
+        help="Total number of licenses across all entities"
+    )
+
+with col2:
+    total_users = int(filtered_df['user_count'].sum()) if not filtered_df.empty else 0
+    st.metric(
+        label="Total Users", 
+        value=f"{total_users:,}",
+        help="Number of users created under companies/partners with licenses"
+    )
+
+with col3:
+    active_users = int(filtered_df['active_users'].sum()) if not filtered_df.empty else 0
+    st.metric(
+        label="Active Users", 
+        value=f"{active_users:,}",
+        help="Users with activity detected in the last 14 days"
+    )
+
+with col4:
+    active_licences = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum() if not filtered_df.empty else 0
+    st.metric(
+        label="Active Licenses", 
+        value=f"{active_licences:,}",
+        help="Currently active licenses"
+    )
+
+# Secondary Metrics Row - Financial and utilization metrics
+st.subheader("💰 Financial & Utilization Metrics")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        avg_relay_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
+        st.metric(
+            label="Avg Relay Cost", 
+            value=f"£{avg_relay_cost:,.0f}",
+            help="Average cost per Relay license"
+        )
+    elif st.session_state.selected_dashboard == 'User Licenses':
+        avg_user_cost = filtered_df['cost_per_license'].mean() if not filtered_df.empty else 0
+        st.metric(
+            label="Avg User Cost", 
+            value=f"£{avg_user_cost:,.0f}",
+            help="Average cost per User license"
+        )
+    else:
+        total_revenue = filtered_df['total_cost'].sum() if not filtered_df.empty else 0
+        st.metric(
+            label="Total Revenue", 
+            value=f"£{total_revenue:,.0f}",
+            help="Total revenue from all licenses"
+        )
+
+with col2:
+    active_relay_devices = int(filtered_df['active_relay_devices'].sum()) if not filtered_df.empty else 0
+    st.metric(
+        label="🔗 Active Relay Devices", 
+        value=f"{active_relay_devices:,}",
+        help="Unique relay devices with activity in the last 14 days"
+    )
+
+with col3:
+    if st.session_state.selected_dashboard == 'Relay Licenses' and not filtered_df.empty:
+        relay_licenses = filtered_df['number_of_licenses'].sum()
+        relay_utilization = (active_relay_devices / relay_licenses * 100) if relay_licenses > 0 else 0
+        st.metric(
+            label="🔗 Relay Utilization", 
+            value=f"{relay_utilization:.1f}%",
+            help="Percentage of relay licenses being actively used"
+        )
+    else:
+        total_entities = len(filtered_df['entity'].unique()) if not filtered_df.empty else 0
+        st.metric(
+            label="🏢 Total Entities", 
+            value=f"{total_entities:,}",
+            help="Number of companies/partners with licenses"
+        )
+
+with col4:
+    if not filtered_df.empty:
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            avg_utilization = (filtered_df['active_relay_devices'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+            st.metric(
+                label="📈 Avg Relay Utilization", 
+                value=f"{avg_utilization:.1f}%",
+                help="Average relay device utilization across all entities"
+            )
+        else:
+            avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
+            st.metric(
+                label="📈 Avg Utilization", 
+                value=f"{avg_utilization:.1f}%",
+                help="Average license utilization across all entities"
+            )
+    else:
+        st.metric(
+            label="📈 Avg Utilization", 
+            value="0%",
+            help="Average license utilization across all entities"
+        )
+
+st.markdown("---")
+
+# Data Management Section
+st.subheader("📋 License Data Management")
+
+# Action buttons row
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    if can_edit:
+        if st.button("➕ Add New License", type="primary", use_container_width=True):
+            st.session_state.show_add_form = True
+    else:
+        st.button("➕ Add New License", disabled=True, help="Admin access required", use_container_width=True)
+
+with col2:
+    if can_edit:
+        if st.button("📥 Import CSV", use_container_width=True):
+            st.session_state.show_import = True
+    else:
+        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True)
+
+with col3:
+    if st.button("📊 Export Data", use_container_width=True):
+        # Export functionality
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"license_data_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+with col4:
+    if st.button("🔄 Refresh", use_container_width=True):
+        load_license_data.clear()
+        st.session_state.df_data = None
+        st.rerun()
+
+# User guidance
 if can_edit:
-    st.info("💡 **Tip**: Click any cell to edit, then use the sidebar Quick Actions to add/import licences.")
+    st.info("💡 **Editing Tip**: Click any cell in the table below to edit. Changes are saved automatically.")
 else:
-    st.info("👁️ **View Only**: Contact admin for edit access. Use sidebar Quick Actions when available.")
+    st.info("👁️ **View Only Mode**: Contact admin for edit access. Use the action buttons above when available.")
 
-# Add utilization metrics to the table
+# Data table with improved styling
 display_df = filtered_df.copy()
 if not display_df.empty:
     # Ensure entity column exists in display_df
@@ -962,10 +1105,8 @@ if not display_df.empty:
     
     # Calculate utilization based on license type
     if st.session_state.selected_dashboard == 'Relay Licenses':
-        # For Relay licenses, use active relay devices for utilization
         display_df['active_utilization_pct'] = ((display_df['active_relay_devices'] / display_df['number_of_licenses']) * 100).round(1)
     else:
-        # For User licenses and All licenses, use active users for utilization
         display_df['active_utilization_pct'] = ((display_df['active_users'] / display_df['number_of_licenses']) * 100).round(1)
     
     display_df['total_utilization_pct'] = ((display_df['user_count'] / display_df['number_of_licenses']) * 100).round(1)
@@ -986,9 +1127,9 @@ if not display_df.empty:
     filtered_df['entity_with_type'] = filtered_df.apply(lambda row: 
         f"{row['entity']} ({row['entity_type']})", axis=1)
 
-# Show data table - editable for admins, read-only for viewers
+# Show data table with improved configuration
 if can_edit:
-    # Editable data for admins - show comprehensive columns but make key ones editable (exclude id for space)
+    # Editable data for admins
     edit_columns = ['company', 'partner', 'product_label', 'start_date', 'end_date', 'number_of_licenses', 
                    'user_count', 'active_users', 'active_relay_devices', 'active_utilization_pct', 'cost_per_license', 'total_cost', 'currency', 'status']
     available_edit_columns = [col for col in edit_columns if col in display_df.columns]
@@ -1128,19 +1269,22 @@ if st.session_state.show_import:
 
 st.markdown("---")
 
-# Charts section
+# Analytics & Visualization Section
+st.subheader("📊 Analytics & Insights")
+
 if not filtered_df.empty:
     # Dashboard-specific charts
     if st.session_state.selected_dashboard == 'Relay Licenses':
         # Relay-specific charts
+        st.markdown("#### 🔗 Relay Infrastructure Analytics")
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🔗 Relay Deployment Status")
-            # Show relay deployment vs licenses
+            # Relay deployment vs licenses chart
             relay_summary = filtered_df.groupby('entity_with_type').agg({
                 'number_of_licenses': 'sum',
-                'active_relay_devices': 'sum'  # Use active_relay_devices instead of active_users
+                'active_relay_devices': 'sum'
             }).reset_index()
             
             if not relay_summary.empty:
@@ -1148,11 +1292,18 @@ if not filtered_df.empty:
                     relay_summary,
                     x='entity_with_type',
                     y=['number_of_licenses', 'active_relay_devices'],
-                    title="Relay Licenses vs Active Devices (Last 14 Days)",
+                    title="Relay Licenses vs Active Devices",
                     barmode='group',
-                    labels={'value': 'Count', 'variable': 'Type'}
+                    labels={'value': 'Count', 'variable': 'Type'},
+                    color_discrete_map={'number_of_licenses': '#667eea', 'active_relay_devices': '#764ba2'}
                 )
                 fig_relay.update_xaxes(tickangle=45)
+                fig_relay.update_layout(
+                    title_font_size=16,
+                    title_x=0.5,
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
                 st.plotly_chart(fig_relay, use_container_width=True)
             else:
                 st.info("📊 No relay data available")
@@ -1627,104 +1778,85 @@ if not filtered_df.empty:
 else:
     st.info("📊 No data available for charts. Add some license records to see visualizations.")
 
-# Dashboard-specific summary
+# Dashboard Summary & Insights
 if not filtered_df.empty:
     st.markdown("---")
+    st.subheader("📋 Dashboard Summary & Insights")
     
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_licenses = filtered_df['number_of_licenses'].sum()
+        st.metric("Total Licenses", f"{total_licenses:,}")
+    
+    with col2:
+        total_revenue = filtered_df['total_cost'].sum()
+        st.metric("Total Revenue", f"£{total_revenue:,.0f}")
+    
+    with col3:
+        active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
+        st.metric("Active Licenses", f"{active_licenses:,}")
+    
+    with col4:
+        avg_cost = filtered_df['cost_per_license'].mean()
+        st.metric("Avg Cost/License", f"£{avg_cost:,.0f}")
+    
+    # Insights and recommendations
+    st.markdown("#### 💡 Key Insights")
+    
+    # Check for over-utilization
     if st.session_state.selected_dashboard == 'Relay Licenses':
-        st.subheader("🔗 Relay License Summary")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_relay_licenses = filtered_df['number_of_licenses'].sum()
-            st.metric("Total Relay Licenses", f"{total_relay_licenses:,}")
-        
-        with col2:
-            avg_relay_cost = filtered_df['cost_per_license'].mean()
-            st.metric("Average Relay Cost", f"£{avg_relay_cost:,.0f}")
-        
-        with col3:
-            active_relay_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
-            st.metric("Active Relay Licenses", f"{active_relay_licenses:,}")
-        
-        # Add relay device metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_active_devices = filtered_df['active_relay_devices'].sum()
-            st.metric("🔗 Active Relay Devices", f"{total_active_devices:,}", help="Devices with activity in last 14 days")
-        
-        with col2:
-            relay_utilization = (total_active_devices / total_relay_licenses * 100) if total_relay_licenses > 0 else 0
-            st.metric("🔗 Device Utilization", f"{relay_utilization:.1f}%", help="Percentage of licenses with active devices")
-        
-        with col3:
-            avg_cost_per_device = (filtered_df['total_cost'].sum() / total_active_devices) if total_active_devices > 0 else 0
-            st.metric("💰 Cost per Active Device", f"£{avg_cost_per_device:,.0f}", help="Average cost per active relay device")
-        
-        # Show top relay customers
-        if not filtered_df.empty:
-            top_relay_customers = filtered_df.groupby('entity_with_type').agg({
-                'number_of_licenses': 'sum',
-                'active_relay_devices': 'sum'
-            }).nlargest(5, 'number_of_licenses')
-            
-            st.write("**Top 5 Relay Customers:**")
-            for entity, data in top_relay_customers.iterrows():
-                utilization = (data['active_relay_devices'] / data['number_of_licenses'] * 100) if data['number_of_licenses'] > 0 else 0
-                st.write(f"• {entity}: {data['number_of_licenses']:,} licenses ({data['active_relay_devices']:,} active devices - {utilization:.1f}% utilization)")
-    
-    elif st.session_state.selected_dashboard == 'User Licenses':
-        st.subheader("👥 User License Summary")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_user_licenses = filtered_df['number_of_licenses'].sum()
-            st.metric("Total User Licenses", f"{total_user_licenses:,}")
-        
-        with col2:
-            total_users = filtered_df['user_count'].sum()
-            st.metric("Total Users", f"{total_users:,}")
-        
-        with col3:
-            avg_utilization = (filtered_df['active_users'].sum() / filtered_df['number_of_licenses'].sum() * 100) if filtered_df['number_of_licenses'].sum() > 0 else 0
-            st.metric("Average Utilization", f"{avg_utilization:.1f}%")
-        
-        # Show utilization insights
-        if not filtered_df.empty:
-            over_utilized = filtered_df[filtered_df['active_users'] > filtered_df['number_of_licenses']]
-            under_utilized = filtered_df[filtered_df['active_users'] < filtered_df['number_of_licenses'] * 0.7]
-            
-            if not over_utilized.empty:
-                st.warning(f"⚠️ **{len(over_utilized)} entities** are over-utilizing their user licenses")
-            if not under_utilized.empty:
-                st.info(f"ℹ️ **{len(under_utilized)} entities** have low user license utilization")
-    
+        over_limit = filtered_df[filtered_df['active_relay_devices'] > filtered_df['number_of_licenses']]
+        if not over_limit.empty:
+            st.warning("⚠️ **Relay License Over-Utilization Detected**")
+            for _, row in over_limit.iterrows():
+                excess = row['active_relay_devices'] - row['number_of_licenses']
+                st.write(f"• **{row['entity']}**: {excess} devices over license limit")
+        else:
+            st.success("✅ All relay licenses are within utilization limits")
     else:
-        # All Licenses summary
-        st.subheader("📊 Overall License Summary")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_licenses = filtered_df['number_of_licenses'].sum()
-            st.metric("Total Licenses", f"{total_licenses:,}")
-        
-        with col2:
-            total_revenue = filtered_df['total_cost'].sum()
-            st.metric("Total Revenue", f"£{total_revenue:,.0f}")
-        
-        with col3:
-            active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
-            st.metric("Active Licenses", f"{active_licenses:,}")
-        
-        # Show product breakdown
-        if 'product_code' in filtered_df.columns:
-            product_breakdown = filtered_df.groupby('product_code').agg({
-                'number_of_licenses': 'sum',
-                'total_cost': 'sum'
-            }).reset_index()
-            
-            if not product_breakdown.empty:
-                st.write("**License Breakdown by Product:**")
-                for _, row in product_breakdown.iterrows():
-                    st.write(f"• {row['product_code']}: {row['number_of_licenses']:,} licenses (£{row['total_cost']:,.0f})") 
+        over_limit = filtered_df[filtered_df['user_count'] > filtered_df['number_of_licenses']]
+        if not over_limit.empty:
+            st.warning("⚠️ **User License Over-Utilization Detected**")
+            for _, row in over_limit.iterrows():
+                excess = row['user_count'] - row['number_of_licenses']
+                st.write(f"• **{row['entity']}**: {excess} users over license limit")
+        else:
+            st.success("✅ All user licenses are within utilization limits")
+    
+    # Expiring licenses warning
+    expiring_soon = filtered_df[
+        (filtered_df['status'] == 'Active') & 
+        (filtered_df['end_date'] <= datetime.now().date() + timedelta(days=30))
+    ]
+    if not expiring_soon.empty:
+        st.warning("⚠️ **Licenses Expiring Soon** (Next 30 days)")
+        for _, row in expiring_soon.iterrows():
+            days_left = (row['end_date'] - datetime.now().date()).days
+            st.write(f"• **{row['entity']}**: {row['product_label']} expires in {days_left} days")
+    
+    # Top performers
+    if st.session_state.selected_dashboard == 'Relay Licenses':
+        top_performers = filtered_df.nlargest(3, 'active_relay_devices')
+        if not top_performers.empty:
+            st.info("🏆 **Top Relay Device Users**")
+            for _, row in top_performers.iterrows():
+                utilization = (row['active_relay_devices'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
+                st.write(f"• **{row['entity']}**: {row['active_relay_devices']} active devices ({utilization:.1f}% utilization)")
+    else:
+        top_performers = filtered_df.nlargest(3, 'active_users')
+        if not top_performers.empty:
+            st.info("🏆 **Top Active User Organizations**")
+            for _, row in top_performers.iterrows():
+                utilization = (row['active_users'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
+                st.write(f"• **{row['entity']}**: {row['active_users']} active users ({utilization:.1f}% utilization)")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 1rem;">
+    <p>📊 License Management Dashboard | Built with Streamlit | Data from Live Database</p>
+    <p>Last updated: {}</p>
+</div>
+""".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")), unsafe_allow_html=True) 
