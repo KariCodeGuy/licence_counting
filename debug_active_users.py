@@ -18,36 +18,36 @@ def debug_active_users():
         result1 = pd.read_sql(query1, connection)
         print(f"Total users with partner_id = 32: {result1.iloc[0]['total_users']}")
         
-        # Check if these users have any logger sessions
-        print("\n🔍 Checking logger sessions for users with partner_id = 32...")
+        # Check if these users have any app_log entries
+        print("\n🔍 Checking app_log entries for users with partner_id = 32...")
         query2 = """
-        SELECT u.id, u.partner_id, ls.deployed_by, ls.collected_by, ls.created, ls.last_update 
+        SELECT u.id, u.partner_id, al.user_id, al.action, al.timestamp 
         FROM users_portal u 
-        LEFT JOIN logger_sessions ls ON (ls.deployed_by = u.id OR ls.collected_by = u.id) 
+        LEFT JOIN fido1.app_log al ON al.user_id = u.id 
         WHERE u.partner_id = 32 
         LIMIT 10
         """
         result2 = pd.read_sql(query2, connection)
-        print(f"Logger sessions found: {len(result2)}")
+        print(f"App log entries found: {len(result2)}")
         if not result2.empty:
             print(result2)
         
-        # Check recent activity (last 14 days)
-        print("\n🔍 Checking recent activity (last 14 days)...")
+        # Check recent activity (last 14 days) from app_log
+        print("\n🔍 Checking recent activity (last 14 days) from app_log...")
         query3 = """
-        SELECT u.id, u.partner_id, ls.deployed_by, ls.collected_by, ls.created, ls.last_update 
+        SELECT u.id, u.partner_id, al.user_id, al.action, al.timestamp 
         FROM users_portal u 
-        INNER JOIN logger_sessions ls ON (ls.deployed_by = u.id OR ls.collected_by = u.id) 
+        INNER JOIN fido1.app_log al ON al.user_id = u.id 
         WHERE u.partner_id = 32 
-        AND (ls.created >= CURDATE() - INTERVAL 14 DAY OR ls.last_update >= CURDATE() - INTERVAL 14 DAY)
+        AND al.timestamp >= NOW() - INTERVAL 14 DAY
         """
         result3 = pd.read_sql(query3, connection)
         print(f"Recent activity found: {len(result3)}")
         if not result3.empty:
             print(result3)
         
-        # Check the actual active users query for partner_id = 32
-        print("\n🔍 Running the active users query for partner_id = 32...")
+        # Check the actual active users query for partner_id = 32 (using app_log)
+        print("\n🔍 Running the active users query for partner_id = 32 (using app_log)...")
         query4 = """
         SELECT 
           p.partner_name as entity_name,
@@ -58,16 +58,11 @@ def debug_active_users():
         FROM license_records lr
         JOIN partners p ON lr.partner_id = p.id
         LEFT JOIN users_portal u ON u.partner_id = p.id
-        LEFT JOIN (
-            SELECT DISTINCT deployed_by AS user_id
-            FROM logger_sessions
-            WHERE created >= CURDATE() - INTERVAL 14 DAY
-            AND deployed_by IS NOT NULL
-            UNION
-            SELECT DISTINCT collected_by AS user_id
-            FROM logger_sessions
-            WHERE last_update >= CURDATE() - INTERVAL 14 DAY
-            AND collected_by IS NOT NULL
+        INNER JOIN (
+            SELECT DISTINCT user_id
+            FROM fido1.app_log
+            WHERE timestamp >= NOW() - INTERVAL 14 DAY
+            AND user_id IS NOT NULL
         ) recent_activity ON recent_activity.user_id = u.id
         WHERE lr.partner_id = 32
         GROUP BY lr.id, p.partner_name, lr.number_of_licenses

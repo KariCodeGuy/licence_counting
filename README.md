@@ -82,7 +82,7 @@ The application expects the following database tables:
 - `partners` - Partner information
 - `license_product_codes` - Product type definitions
 - `users_portal` - User account data
-- `logger_sessions` - Activity tracking data
+- `fido1.app_log` - Activity tracking data (recently updated from logger_sessions)
 
 ## Usage
 
@@ -128,6 +128,22 @@ The application expects the following database tables:
 ## License
 
 This project is proprietary software for internal use.
+
+## Recent Changes
+
+### Active User Tracking Update (Latest)
+- **Changed from**: `logger_sessions` table (deployed_by/collected_by fields)
+- **Changed to**: `fido1.app_log` table (user_id field)
+- **Definition**: A user is considered active if they have any record in the `fido1.app_log` table within the last 14 days
+- **Benefits**: More accurate user activity tracking based on actual application usage
+
+### App Log Schema
+The `fido1.app_log` table contains:
+- `user_id` - User identifier
+- `timestamp` - Activity timestamp
+- `action` - User action performed
+- `status` - Action status
+- Additional fields for detailed tracking
 
 ## Support
 

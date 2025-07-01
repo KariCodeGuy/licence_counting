@@ -220,13 +220,13 @@ class DatabaseConnection:
         self.session.close()
 
     def get_active_users_per_company(self):
-        """Fetch active users per company or partner based on the last 14 days of activity"""
+        """Fetch active users per company or partner based on the last 14 days of activity from fido1.app_log table"""
         connection = self.get_connection()
         if not connection:
             return pd.DataFrame()
         
         try:
-            # Get active users for company and partner licenses
+            # Get active users for company and partner licenses using fido1.app_log table
             query = '''
             SELECT 
               c.company_name as entity_name,
@@ -238,15 +238,10 @@ class DatabaseConnection:
             JOIN companies c ON lr.company_id = c.id
             LEFT JOIN users_portal u ON u.company_id = c.id
             INNER JOIN (
-                SELECT DISTINCT deployed_by AS user_id
-                FROM logger_sessions
-                WHERE created >= CURDATE() - INTERVAL 14 DAY
-                AND deployed_by IS NOT NULL
-                UNION
-                SELECT DISTINCT collected_by AS user_id
-                FROM logger_sessions
-                WHERE last_update >= CURDATE() - INTERVAL 14 DAY
-                AND collected_by IS NOT NULL
+                SELECT DISTINCT user_id
+                FROM fido1.app_log
+                WHERE timestamp >= NOW() - INTERVAL 14 DAY
+                AND user_id IS NOT NULL
             ) recent_activity ON recent_activity.user_id = u.id
             WHERE lr.company_id IS NOT NULL
             GROUP BY lr.id, c.company_name, lr.number_of_licenses
@@ -263,15 +258,10 @@ class DatabaseConnection:
             JOIN partners p ON lr.partner_id = p.id
             LEFT JOIN users_portal u ON u.partner_id = p.id
             INNER JOIN (
-                SELECT DISTINCT deployed_by AS user_id
-                FROM logger_sessions
-                WHERE created >= CURDATE() - INTERVAL 14 DAY
-                AND deployed_by IS NOT NULL
-                UNION
-                SELECT DISTINCT collected_by AS user_id
-                FROM logger_sessions
-                WHERE last_update >= CURDATE() - INTERVAL 14 DAY
-                AND collected_by IS NOT NULL
+                SELECT DISTINCT user_id
+                FROM fido1.app_log
+                WHERE timestamp >= NOW() - INTERVAL 14 DAY
+                AND user_id IS NOT NULL
             ) recent_activity ON recent_activity.user_id = u.id
             WHERE lr.partner_id IS NOT NULL
             GROUP BY lr.id, p.partner_name, lr.number_of_licenses
