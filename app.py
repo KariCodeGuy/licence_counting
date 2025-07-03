@@ -638,6 +638,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     
     dashboard_options = ['All Licenses', 'Relay Licenses', 'User Licenses', 'System Logs']
+    st.write('DEBUG: dashboard_options =', dashboard_options)
     selected_dashboard = st.selectbox(
         "Select Dashboard",
         options=dashboard_options,
