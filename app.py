@@ -82,6 +82,8 @@ if 'df_data' not in st.session_state:
     st.session_state.df_data = None
 if 'selected_dashboard' not in st.session_state:
     st.session_state.selected_dashboard = 'All Licenses'
+if 'show_logs_dashboard' not in st.session_state:
+    st.session_state.show_logs_dashboard = False
 
 # --- Modal dialog for deleting licences ---
 @st.dialog("🗑️ Delete Licence")
@@ -596,7 +598,7 @@ with st.sidebar:
         st.write(f"**{current_user['display_name']}**")
         st.write(f"🔐 {current_user['role'].title()} Access")
         
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", use_container_width=True, key="logout"):
             auth_manager.logout()
     
     st.markdown("---")
@@ -611,16 +613,16 @@ with st.sidebar:
     can_edit = current_user and 'edit' in current_user.get('permissions', [])
     
     if can_edit:
-        if st.button("➕ Add License", type="primary", use_container_width=True):
+        if st.button("➕ Add License", type="primary", use_container_width=True, key="sidebar_add_license"):
             st.session_state.show_add_form = True
         
-        if st.button("📥 Import CSV", use_container_width=True):
+        if st.button("📥 Import CSV", use_container_width=True, key="sidebar_import_csv"):
             st.session_state.show_import = True
     else:
-        st.button("➕ Add License", disabled=True, help="Admin access required", use_container_width=True)
-        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True)
+        st.button("➕ Add License", disabled=True, help="Admin access required", use_container_width=True, key="sidebar_add_license_disabled")
+        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True, key="sidebar_import_csv_disabled")
     
-    if st.button("🔄 Refresh Data", use_container_width=True):
+    if st.button("🔄 Refresh Data", use_container_width=True, key="sidebar_refresh_data"):
         load_license_data.clear()
         st.session_state.df_data = None
         st.success("✅ Data refreshed!")
@@ -635,7 +637,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    dashboard_options = ['All Licenses', 'Relay Licenses', 'User Licenses']
+    dashboard_options = ['All Licenses', 'Relay Licenses', 'User Licenses', 'System Logs']
     selected_dashboard = st.selectbox(
         "Select Dashboard",
         options=dashboard_options,
@@ -936,9 +938,241 @@ if st.session_state.selected_dashboard == 'Relay Licenses':
     st.info("🔗 **Relay Licenses Dashboard**: Viewing data for Relay infrastructure licenses. These licenses control the number of Relay instances that can be deployed.")
 elif st.session_state.selected_dashboard == 'User Licenses':
     st.info("👥 **User Licenses Dashboard**: Viewing data for user access licenses. These licenses control the number of users who can access the system.")
+elif st.session_state.selected_dashboard == 'System Logs':
+    st.info("📋 **System Logs Dashboard**: Unified view of all system activity logs from Portal, App, and Waypoint systems for monitoring and auditing.")
 else:
     st.info("📊 **All Licenses Dashboard**: Viewing data for all license types combined.")
 
+# Check if we're showing the logs dashboard
+if st.session_state.selected_dashboard == 'System Logs':
+    # Logs Dashboard Content
+    st.subheader("📋 System Activity Logs")
+    
+    # Load filter options
+    db = DatabaseConnection()
+    filter_options = db.get_log_filters()
+    
+    # Filters Section
+    with st.expander("🔍 Log Filters", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Date range filter
+            date_range = st.date_input(
+                "📅 Date Range",
+                value=(datetime.now().date() - timedelta(days=7), datetime.now().date()),
+                help="Filter logs by date range"
+            )
+            
+            # User filter
+            user_options = [f"{user['name']} ({user['email']})" for user in filter_options['users']]
+            user_options.insert(0, "All Users")
+            selected_user = st.selectbox(
+                "👤 User",
+                options=user_options,
+                help="Filter by specific user"
+            )
+        
+        with col2:
+            # Company filter
+            company_options = [company['name'] for company in filter_options['companies']]
+            company_options.insert(0, "All Companies")
+            selected_company = st.selectbox(
+                "🏢 Company",
+                options=company_options,
+                help="Filter by company"
+            )
+            
+            # Partner filter
+            partner_options = [partner['name'] for partner in filter_options['partners']]
+            partner_options.insert(0, "All Partners")
+            selected_partner = st.selectbox(
+                "🤝 Partner",
+                options=partner_options,
+                help="Filter by partner"
+            )
+        
+        with col3:
+            # Log type filter
+            log_type_options = ["All Types"] + filter_options['log_types']
+            selected_log_type = st.selectbox(
+                "📝 Log Type",
+                options=log_type_options,
+                help="Filter by log source"
+            )
+            
+            # Refresh button
+            if st.button("🔄 Refresh Logs", type="primary", use_container_width=True, key="logs_refresh"):
+                st.rerun()
+    
+    # Ranking Panels
+    st.subheader("🏆 Today's Top Performers")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🔗 Top 3 Most Active Waypoints")
+        top_waypoints = db.get_top_waypoints_today()
+        if not top_waypoints.empty:
+            for idx, row in top_waypoints.iterrows():
+                with st.container():
+                    col_rank, col_info = st.columns([1, 4])
+                    with col_rank:
+                        st.markdown(f"**#{idx + 1}**")
+                    with col_info:
+                        st.write(f"**{row['waypoint_name']}** (ID: {row['waypoint_id']})")
+                        st.write(f"📊 {row['actions_today']} actions today")
+        else:
+            st.info("📊 No waypoint activity recorded today")
+    
+    with col2:
+        st.markdown("#### 💻 Top 3 Most Active Sessions")
+        top_sessions = db.get_top_sessions_today()
+        if not top_sessions.empty:
+            for idx, row in top_sessions.iterrows():
+                with st.container():
+                    col_rank, col_info = st.columns([1, 4])
+                    with col_rank:
+                        st.markdown(f"**#{idx + 1}**")
+                    with col_info:
+                        st.write(f"**Session {row['session_id']}**")
+                        st.write(f"📊 {row['activity_count']} activities today")
+                        if pd.notna(row['first_activity']):
+                            st.write(f"⏰ {row['first_activity'].strftime('%H:%M')} - {row['last_activity'].strftime('%H:%M')}")
+        else:
+            st.info("📊 No session activity recorded today")
+    
+    # Load and display logs
+    st.subheader("📋 Activity Logs")
+    
+    # Prepare filter parameters
+    start_date = date_range[0] if len(date_range) > 0 else None
+    end_date = date_range[1] if len(date_range) > 1 else None
+    
+    user_id = None
+    if selected_user != "All Users":
+        user_name = selected_user.split(" (")[0]
+        for user in filter_options['users']:
+            if user['name'] == user_name:
+                user_id = user['id']
+                break
+    
+    company_id = None
+    if selected_company != "All Companies":
+        for company in filter_options['companies']:
+            if company['name'] == selected_company:
+                company_id = company['id']
+                break
+    
+    partner_id = None
+    if selected_partner != "All Partners":
+        for partner in filter_options['partners']:
+            if partner['name'] == selected_partner:
+                partner_id = partner['id']
+                break
+    
+    log_type = None
+    if selected_log_type != "All Types":
+        log_type = selected_log_type
+    
+    # Load logs data
+    logs_df = db.get_unified_logs(
+        start_date=start_date,
+        end_date=end_date,
+        user_id=user_id,
+        company_id=company_id,
+        partner_id=partner_id,
+        log_type=log_type
+    )
+    
+    # Display logs table
+    if not logs_df.empty:
+        # Convert timestamp to datetime for better display
+        logs_df['timestamp'] = pd.to_datetime(logs_df['timestamp'])
+        
+        # Add log type icons
+        logs_df['log_type_icon'] = logs_df['log_source'].map({
+            'portal_logs': '🌐',
+            'app_log': '📱',
+            'fidoapi_waypoint_logs': '📍'
+        })
+        
+        # Display the logs table
+        st.dataframe(
+            logs_df[['timestamp', 'log_type_icon', 'user_name', 'action', 'status', 'company_name', 'partner_name', 'session_id', 'waypoint_id', 'notes']],
+            use_container_width=True,
+            column_config={
+                'timestamp': st.column_config.DatetimeColumn('Timestamp', format='DD-MM-YYYY HH:mm:ss'),
+                'log_type_icon': st.column_config.TextColumn('Type', width="small"),
+                'user_name': st.column_config.TextColumn('User', width="medium"),
+                'action': st.column_config.TextColumn('Action', width="medium"),
+                'status': st.column_config.TextColumn('Status', width="small"),
+                'company_name': st.column_config.TextColumn('Company', width="medium"),
+                'partner_name': st.column_config.TextColumn('Partner', width="medium"),
+                'session_id': st.column_config.TextColumn('Session ID', width="small"),
+                'waypoint_id': st.column_config.TextColumn('Waypoint ID', width="small"),
+                'notes': st.column_config.TextColumn('Notes', width="large")
+            },
+            hide_index=True
+        )
+        
+        # Summary statistics
+        st.subheader("📊 Log Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            total_logs = len(logs_df)
+            st.metric("Total Logs", f"{total_logs:,}")
+        
+        with col2:
+            unique_users = logs_df['user_name'].nunique()
+            st.metric("Unique Users", f"{unique_users:,}")
+        
+        with col3:
+            log_types = logs_df['log_source'].value_counts()
+            portal_logs = log_types.get('portal_logs', 0)
+            st.metric("Portal Logs", f"{portal_logs:,}")
+        
+        with col4:
+            app_logs = log_types.get('app_log', 0)
+            st.metric("App Logs", f"{app_logs:,}")
+        
+        # Log type distribution chart
+        if len(log_types) > 0:
+            st.subheader("📈 Log Type Distribution")
+            fig_log_types = px.pie(
+                values=log_types.values,
+                names=log_types.index,
+                title="Distribution of Log Types",
+                color_discrete_map={
+                    'portal_logs': '#667eea',
+                    'app_log': '#764ba2',
+                    'fidoapi_waypoint_logs': '#f093fb'
+                }
+            )
+            st.plotly_chart(fig_log_types, use_container_width=True)
+        
+        # Activity timeline
+        st.subheader("⏰ Activity Timeline")
+        timeline_df = logs_df.groupby(logs_df['timestamp'].dt.date).size().reset_index(name='count')
+        timeline_df.columns = ['date', 'activity_count']
+        
+        if not timeline_df.empty:
+            fig_timeline = px.line(
+                timeline_df,
+                x='date',
+                y='activity_count',
+                title="Daily Activity Count",
+                labels={'activity_count': 'Number of Activities', 'date': 'Date'}
+            )
+            st.plotly_chart(fig_timeline, use_container_width=True)
+    
+    else:
+        st.info("📊 No logs found for the selected filters. Try adjusting your filter criteria.")
+    
+    # End of logs dashboard
+    st.stop()
+
+# License Dashboard Content (existing code)
 # Primary Metrics Row - Most important KPIs
 st.subheader("📈 Key Performance Indicators")
 col1, col2, col3, col4 = st.columns(4)
@@ -1059,20 +1293,20 @@ st.subheader("📋 License Data Management")
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     if can_edit:
-        if st.button("➕ Add New License", type="primary", use_container_width=True):
+        if st.button("➕ Add New License", type="primary", use_container_width=True, key="main_add_license"):
             st.session_state.show_add_form = True
     else:
-        st.button("➕ Add New License", disabled=True, help="Admin access required", use_container_width=True)
+        st.button("➕ Add New License", disabled=True, help="Admin access required", use_container_width=True, key="main_add_license_disabled")
 
 with col2:
     if can_edit:
-        if st.button("📥 Import CSV", use_container_width=True):
+        if st.button("📥 Import CSV", use_container_width=True, key="main_import_csv"):
             st.session_state.show_import = True
     else:
-        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True)
+        st.button("📥 Import CSV", disabled=True, help="Admin access required", use_container_width=True, key="main_import_csv_disabled")
 
 with col3:
-    if st.button("📊 Export Data", use_container_width=True):
+    if st.button("📊 Export Data", use_container_width=True, key="export_data"):
         # Export functionality
         csv = filtered_df.to_csv(index=False)
         st.download_button(
@@ -1083,7 +1317,7 @@ with col3:
         )
 
 with col4:
-    if st.button("🔄 Refresh", use_container_width=True):
+    if st.button("🔄 Refresh", use_container_width=True, key="main_refresh"):
         load_license_data.clear()
         st.session_state.df_data = None
         st.rerun()
@@ -1778,79 +2012,73 @@ if not filtered_df.empty:
 else:
     st.info("📊 No data available for charts. Add some license records to see visualizations.")
 
-# Dashboard Summary & Insights
+# Key Insights & Alerts Section
 if not filtered_df.empty:
     st.markdown("---")
-    st.subheader("📋 Dashboard Summary & Insights")
+    st.subheader("💡 Key Insights & Alerts")
     
-    # Summary metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Create columns for insights
+    col1, col2 = st.columns(2)
     
     with col1:
-        total_licenses = filtered_df['number_of_licenses'].sum()
-        st.metric("Total Licenses", f"{total_licenses:,}")
+        # Check for over-utilization
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            over_limit = filtered_df[filtered_df['active_relay_devices'] > filtered_df['number_of_licenses']]
+            if not over_limit.empty:
+                st.warning("⚠️ **Relay License Over-Utilization**")
+                for _, row in over_limit.iterrows():
+                    excess = row['active_relay_devices'] - row['number_of_licenses']
+                    st.write(f"• **{row['entity']}**: {excess} devices over limit")
+            else:
+                st.success("✅ All relay licenses within limits")
+        else:
+            over_limit = filtered_df[filtered_df['user_count'] > filtered_df['number_of_licenses']]
+            if not over_limit.empty:
+                st.warning("⚠️ **User License Over-Utilization**")
+                for _, row in over_limit.iterrows():
+                    excess = row['user_count'] - row['number_of_licenses']
+                    st.write(f"• **{row['entity']}**: {excess} users over limit")
+            else:
+                st.success("✅ All user licenses within limits")
+        
+        # Expiring licenses warning
+        expiring_soon = filtered_df[
+            (filtered_df['status'] == 'Active') & 
+            (filtered_df['end_date'] <= datetime.now().date() + timedelta(days=30))
+        ]
+        if not expiring_soon.empty:
+            st.warning("⚠️ **Licenses Expiring Soon** (30 days)")
+            for _, row in expiring_soon.iterrows():
+                days_left = (row['end_date'] - datetime.now().date()).days
+                st.write(f"• **{row['entity']}**: {days_left} days left")
     
     with col2:
-        total_revenue = filtered_df['total_cost'].sum()
-        st.metric("Total Revenue", f"£{total_revenue:,.0f}")
-    
-    with col3:
-        active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
-        st.metric("Active Licenses", f"{active_licenses:,}")
-    
-    with col4:
-        avg_cost = filtered_df['cost_per_license'].mean()
-        st.metric("Avg Cost/License", f"£{avg_cost:,.0f}")
-    
-    # Insights and recommendations
-    st.markdown("#### 💡 Key Insights")
-    
-    # Check for over-utilization
-    if st.session_state.selected_dashboard == 'Relay Licenses':
-        over_limit = filtered_df[filtered_df['active_relay_devices'] > filtered_df['number_of_licenses']]
-        if not over_limit.empty:
-            st.warning("⚠️ **Relay License Over-Utilization Detected**")
-            for _, row in over_limit.iterrows():
-                excess = row['active_relay_devices'] - row['number_of_licenses']
-                st.write(f"• **{row['entity']}**: {excess} devices over license limit")
+        # Top performers
+        if st.session_state.selected_dashboard == 'Relay Licenses':
+            top_performers = filtered_df.nlargest(3, 'active_relay_devices')
+            if not top_performers.empty:
+                st.info("🏆 **Top Relay Device Users**")
+                for _, row in top_performers.iterrows():
+                    utilization = (row['active_relay_devices'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
+                    st.write(f"• **{row['entity']}**: {utilization:.1f}% utilization")
         else:
-            st.success("✅ All relay licenses are within utilization limits")
-    else:
-        over_limit = filtered_df[filtered_df['user_count'] > filtered_df['number_of_licenses']]
-        if not over_limit.empty:
-            st.warning("⚠️ **User License Over-Utilization Detected**")
-            for _, row in over_limit.iterrows():
-                excess = row['user_count'] - row['number_of_licenses']
-                st.write(f"• **{row['entity']}**: {excess} users over license limit")
-        else:
-            st.success("✅ All user licenses are within utilization limits")
-    
-    # Expiring licenses warning
-    expiring_soon = filtered_df[
-        (filtered_df['status'] == 'Active') & 
-        (filtered_df['end_date'] <= datetime.now().date() + timedelta(days=30))
-    ]
-    if not expiring_soon.empty:
-        st.warning("⚠️ **Licenses Expiring Soon** (Next 30 days)")
-        for _, row in expiring_soon.iterrows():
-            days_left = (row['end_date'] - datetime.now().date()).days
-            st.write(f"• **{row['entity']}**: {row['product_label']} expires in {days_left} days")
-    
-    # Top performers
-    if st.session_state.selected_dashboard == 'Relay Licenses':
-        top_performers = filtered_df.nlargest(3, 'active_relay_devices')
-        if not top_performers.empty:
-            st.info("🏆 **Top Relay Device Users**")
-            for _, row in top_performers.iterrows():
-                utilization = (row['active_relay_devices'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
-                st.write(f"• **{row['entity']}**: {row['active_relay_devices']} active devices ({utilization:.1f}% utilization)")
-    else:
-        top_performers = filtered_df.nlargest(3, 'active_users')
-        if not top_performers.empty:
-            st.info("🏆 **Top Active User Organizations**")
-            for _, row in top_performers.iterrows():
-                utilization = (row['active_users'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
-                st.write(f"• **{row['entity']}**: {row['active_users']} active users ({utilization:.1f}% utilization)")
+            top_performers = filtered_df.nlargest(3, 'active_users')
+            if not top_performers.empty:
+                st.info("🏆 **Top Active Organizations**")
+                for _, row in top_performers.iterrows():
+                    utilization = (row['active_users'] / row['number_of_licenses'] * 100) if row['number_of_licenses'] > 0 else 0
+                    st.write(f"• **{row['entity']}**: {utilization:.1f}% utilization")
+        
+        # Quick stats
+        if not filtered_df.empty:
+            total_entities = len(filtered_df['entity'].unique())
+            active_licenses = filtered_df[filtered_df['status'] == 'Active']['number_of_licenses'].sum()
+            st.info(f"📊 **Quick Stats**")
+            st.write(f"• **{total_entities}** entities")
+            st.write(f"• **{active_licenses:,}** active licenses")
+            if 'currency' in filtered_df.columns:
+                currencies = len(filtered_df['currency'].unique())
+                st.write(f"• **{currencies}** currencies")
 
 # Footer
 st.markdown("---")

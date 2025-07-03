@@ -363,6 +363,338 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
+    def get_unified_logs(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None, log_type=None):
+        """Fetch unified logs from portal_logs, app_log, and fidoapi_waypoint_logs tables"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # Build date filter for each table type
+            portal_date_filter = ""
+            app_date_filter = ""
+            waypoint_date_filter = ""
+            
+            if start_date and end_date:
+                portal_date_filter = f"AND CONCAT(pl.date, ' ', pl.time) BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+                app_date_filter = f"AND al.timestamp BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+                waypoint_date_filter = f"AND fwl.datetime BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                portal_date_filter = f"AND CONCAT(pl.date, ' ', pl.time) >= '{start_date} 00:00:00'"
+                app_date_filter = f"AND al.timestamp >= '{start_date} 00:00:00'"
+                waypoint_date_filter = f"AND fwl.datetime >= '{start_date} 00:00:00'"
+            elif end_date:
+                portal_date_filter = f"AND CONCAT(pl.date, ' ', pl.time) <= '{end_date} 23:59:59'"
+                app_date_filter = f"AND al.timestamp <= '{end_date} 23:59:59'"
+                waypoint_date_filter = f"AND fwl.datetime <= '{end_date} 23:59:59'"
+            
+            # Build company filter
+            portal_company_filter = ""
+            app_company_filter = ""
+            waypoint_company_filter = ""
+            if company_id:
+                portal_company_filter = f"AND pl.company_id = {company_id}"
+                app_company_filter = f"AND u.company_id = {company_id}"
+                waypoint_company_filter = f"AND u.company_id = {company_id}"
+            
+            # Build partner filter
+            portal_partner_filter = ""
+            app_partner_filter = ""
+            waypoint_partner_filter = ""
+            if partner_id:
+                portal_partner_filter = f"AND pl.partner_id = {partner_id}"
+                app_partner_filter = f"AND u.partner_id = {partner_id}"
+                waypoint_partner_filter = f"AND u.partner_id = {partner_id}"
+            
+            # Build user filter (only for app and waypoint logs)
+            app_user_filter = ""
+            waypoint_user_filter = ""
+            if user_id:
+                app_user_filter = f"AND al.user_id = {user_id}"
+                waypoint_user_filter = f"AND fwl.user_id = {user_id}"
+            
+            # Build log type filter
+            log_type_filter = ""
+            if log_type:
+                if log_type == "Portal":
+                    log_type_filter = "AND log_source = 'portal_logs'"
+                elif log_type == "App":
+                    log_type_filter = "AND log_source = 'app_log'"
+                elif log_type == "Waypoint":
+                    log_type_filter = "AND log_source = 'fidoapi_waypoint_logs'"
+            
+            # Build the query dynamically based on available tables and log type filter
+            union_parts = []
+            
+            # Always include Portal Logs (if not specifically filtered out)
+            if not log_type or log_type == "Portal":
+                portal_query = f'''
+                SELECT 
+                    CONCAT(pl.date, ' ', pl.time) as datetime,
+                    pl.name as user_name,
+                    pl.email as user_email,
+                    pl.action,
+                    pl.status,
+                    pl.notes,
+                    'portal_logs' as log_source,
+                    c.company_name,
+                    p.partner_name,
+                    NULL as session_id,
+                    NULL as waypoint_id,
+                    NULL as waypoint_name,
+                    pl.object_data,
+                    JSON_OBJECT('company_id', pl.company_id, 'partner_id', pl.partner_id, 'branch_id', pl.branch_id) as metadata
+                FROM fido1.portal_logs pl
+                LEFT JOIN fido1.companies c ON pl.company_id = c.id
+                LEFT JOIN fido1.partners p ON pl.partner_id = p.id
+                WHERE 1=1 {portal_date_filter} {portal_company_filter} {portal_partner_filter}
+                '''
+                union_parts.append(portal_query)
+            
+            # Always include App Logs (if not specifically filtered out)
+            if not log_type or log_type == "App":
+                app_query = f'''
+                SELECT 
+                    al.timestamp as datetime,
+                    CONCAT(u.first_name, ' ', u.last_name) as user_name,
+                    u.email as user_email,
+                    al.action,
+                    al.status,
+                    al.notes,
+                    'app_log' as log_source,
+                    c.company_name,
+                    p.partner_name,
+                    al.session_id,
+                    al.waypoint_id,
+                    NULL as waypoint_name,
+                    NULL as object_data,
+                    JSON_OBJECT('user_id', al.user_id, 'dma_id', al.dma_id) as metadata
+                FROM fido1.app_log al
+                LEFT JOIN fido1.users_portal u ON al.user_id = u.id
+                LEFT JOIN fido1.companies c ON u.company_id = c.id
+                LEFT JOIN fido1.partners p ON u.partner_id = p.id
+                WHERE 1=1 {app_date_filter} {app_user_filter} {app_company_filter} {app_partner_filter}
+                '''
+                union_parts.append(app_query)
+            
+            # Try to include Waypoint Logs (if not specifically filtered out and table is accessible)
+            if not log_type or log_type == "Waypoint":
+                try:
+                    # Test if waypoint table is accessible
+                    test_cursor = connection.cursor()
+                    test_cursor.execute("SELECT 1 FROM fido1.fidoapi_waypoint_logs LIMIT 1")
+                    test_cursor.close()
+                    
+                    # If we get here, the table is accessible
+                    waypoint_query = f'''
+                    SELECT 
+                        fwl.datetime,
+                        fwl.user_name,
+                        NULL as user_email,
+                        fwl.changed_to_status_name as action,
+                        'completed' as status,
+                        CONCAT('Waypoint: ', fwl.waypoint_name) as notes,
+                        'fidoapi_waypoint_logs' as log_source,
+                        c.company_name,
+                        p.partner_name,
+                        NULL as session_id,
+                        fwl.waypoint_id,
+                        fwl.waypoint_name,
+                        NULL as object_data,
+                        JSON_OBJECT('user_id', fwl.user_id) as metadata
+                    FROM fido1.fidoapi_waypoint_logs fwl
+                    LEFT JOIN fido1.users_portal u ON fwl.user_id = u.id
+                    LEFT JOIN fido1.companies c ON u.company_id = c.id
+                    LEFT JOIN fido1.partners p ON u.partner_id = p.id
+                    WHERE 1=1 {waypoint_date_filter} {waypoint_user_filter} {waypoint_company_filter} {waypoint_partner_filter}
+                    '''
+                    union_parts.append(waypoint_query)
+                except Exception:
+                    # Table not accessible, skip waypoint logs
+                    pass
+            
+            if not union_parts:
+                return pd.DataFrame()
+            
+            # Combine all accessible parts
+            query = f'''
+            SELECT 
+                datetime as timestamp,
+                user_name,
+                user_email,
+                action,
+                status,
+                notes,
+                log_source,
+                company_name,
+                partner_name,
+                session_id,
+                waypoint_id,
+                waypoint_name,
+                object_data,
+                metadata
+            FROM (
+                {' UNION ALL '.join(union_parts)}
+            ) unified_logs
+            WHERE 1=1 {log_type_filter}
+            ORDER BY datetime DESC
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            print(f"Error fetching unified logs: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_top_waypoints_today(self):
+        """Get top 3 most active waypoints worked on today"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # First check if the table is accessible
+            test_cursor = connection.cursor()
+            test_cursor.execute("SELECT 1 FROM fido1.fidoapi_waypoint_logs LIMIT 1")
+            test_cursor.close()
+            
+            # If we get here, the table is accessible
+            query = '''
+            SELECT 
+                waypoint_id, 
+                waypoint_name, 
+                COUNT(*) AS actions_today
+            FROM fido1.fidoapi_waypoint_logs
+            WHERE DATE(datetime) = CURRENT_DATE
+            GROUP BY waypoint_id, waypoint_name
+            ORDER BY actions_today DESC
+            LIMIT 3
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            # Table not accessible, return empty DataFrame
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_top_sessions_today(self):
+        """Get top 3 sessions with most activity today"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            query = '''
+            SELECT 
+                session_id, 
+                COUNT(*) AS activity_count,
+                MIN(timestamp) as first_activity,
+                MAX(timestamp) as last_activity
+            FROM fido1.app_log
+            WHERE DATE(timestamp) = CURRENT_DATE
+            AND session_id IS NOT NULL
+            GROUP BY session_id
+            ORDER BY activity_count DESC
+            LIMIT 3
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            print(f"Error fetching top sessions: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_log_filters(self):
+        """Get available filter options for logs"""
+        connection = self.get_connection()
+        if not connection:
+            return {
+                'users': [],
+                'companies': [],
+                'partners': [],
+                'log_types': ['Portal', 'App']
+            }
+        
+        try:
+            # Get unique users
+            users_query = '''
+            SELECT DISTINCT 
+                u.id,
+                CONCAT(u.first_name, ' ', u.last_name) as user_name,
+                u.email
+            FROM fido1.users_portal u
+            WHERE u.active = 1
+            ORDER BY user_name
+            '''
+            users_df = pd.read_sql(users_query, connection)
+            users = [{'id': row['id'], 'name': row['user_name'], 'email': row['email']} 
+                    for _, row in users_df.iterrows()]
+            
+            # Get companies
+            companies_query = '''
+            SELECT id, company_name 
+            FROM fido1.companies 
+            WHERE active = 1 
+            ORDER BY company_name
+            '''
+            companies_df = pd.read_sql(companies_query, connection)
+            companies = [{'id': row['id'], 'name': row['company_name']} 
+                        for _, row in companies_df.iterrows()]
+            
+            # Get partners
+            partners_query = '''
+            SELECT id, partner_name 
+            FROM fido1.partners 
+            ORDER BY partner_name
+            '''
+            partners_df = pd.read_sql(partners_query, connection)
+            partners = [{'id': row['id'], 'name': row['partner_name']} 
+                       for _, row in partners_df.iterrows()]
+            
+            # Determine available log types based on table accessibility
+            log_types = ['Portal', 'App']
+            
+            # Check if waypoint table is accessible
+            try:
+                test_cursor = connection.cursor()
+                test_cursor.execute("SELECT 1 FROM fido1.fidoapi_waypoint_logs LIMIT 1")
+                test_cursor.close()
+                log_types.append('Waypoint')
+            except Exception:
+                # Waypoint table not accessible, skip it
+                pass
+            
+            return {
+                'users': users,
+                'companies': companies,
+                'partners': partners,
+                'log_types': log_types
+            }
+            
+        except Exception as e:
+            print(f"Error fetching log filters: {e}")
+            return {
+                'users': [],
+                'companies': [],
+                'partners': [],
+                'log_types': ['Portal', 'App']
+            }
+        finally:
+            if connection.is_connected():
+                connection.close()
+
 # Example usage for when you're ready to switch from mock data:
 """
 # In your app.py, replace the generate_mock_data() function with:
