@@ -1096,7 +1096,7 @@ if st.session_state.selected_dashboard == 'System Logs':
         logs_df['log_type_icon'] = logs_df['log_source'].map({
             'portal_logs': '🌐',
             'app_log': '📱',
-            'fidoapi_waypoint_logs': '📍'
+            'waypoint_logs': '📍'
         })
         
         # Display the logs table
@@ -1149,7 +1149,7 @@ if st.session_state.selected_dashboard == 'System Logs':
                 color_discrete_map={
                     'portal_logs': '#667eea',
                     'app_log': '#764ba2',
-                    'fidoapi_waypoint_logs': '#f093fb'
+                    'waypoint_logs': '#f093fb'
                 }
             )
             st.plotly_chart(fig_log_types, use_container_width=True)
