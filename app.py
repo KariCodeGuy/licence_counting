@@ -1009,38 +1009,40 @@ if st.session_state.selected_dashboard == 'System Logs':
     # Ranking Panels
     st.subheader("🏆 Today's Top Performers")
     col1, col2 = st.columns(2)
-    
+
+    # Use the same date_range as the log filters
+    top_users_sessions = db.get_top_users_by_sessions(start_date=date_range[0], end_date=date_range[1])
+    top_users_waypoints = db.get_top_users_by_waypoints(start_date=date_range[0], end_date=date_range[1])
+
     with col1:
-        st.markdown("#### 🔗 Top 3 Most Active Waypoints")
-        top_waypoints = db.get_top_waypoints_today()
-        if not top_waypoints.empty:
-            for idx, row in top_waypoints.iterrows():
+        st.markdown("#### 💻 Top 3 Users by Sessions")
+        if not top_users_sessions.empty:
+            for idx, row in top_users_sessions.iterrows():
                 with st.container():
                     col_rank, col_info = st.columns([1, 4])
                     with col_rank:
                         st.markdown(f"**#{idx + 1}**")
                     with col_info:
-                        st.write(f"**{row['waypoint_name']}** (ID: {row['waypoint_id']})")
-                        st.write(f"📊 {row['actions_today']} actions today")
+                        st.write(f"**{row['user_name']}**")
+                        st.write(f"✉️ {row['email']}")
+                        st.write(f"📊 {row['session_count']} sessions")
         else:
-            st.info("📊 No waypoint activity recorded today")
-    
+            st.info("📊 No session activity recorded in this period")
+
     with col2:
-        st.markdown("#### 💻 Top 3 Most Active Sessions")
-        top_sessions = db.get_top_sessions_today()
-        if not top_sessions.empty:
-            for idx, row in top_sessions.iterrows():
+        st.markdown("#### 📍 Top 3 Users by Waypoints")
+        if not top_users_waypoints.empty:
+            for idx, row in top_users_waypoints.iterrows():
                 with st.container():
                     col_rank, col_info = st.columns([1, 4])
                     with col_rank:
                         st.markdown(f"**#{idx + 1}**")
                     with col_info:
-                        st.write(f"**Session {row['session_id']}**")
-                        st.write(f"📊 {row['activity_count']} activities today")
-                        if pd.notna(row['first_activity']):
-                            st.write(f"⏰ {row['first_activity'].strftime('%H:%M')} - {row['last_activity'].strftime('%H:%M')}")
+                        st.write(f"**{row['user_name']}**")
+                        st.write(f"✉️ {row['email']}")
+                        st.write(f"📊 {row['waypoint_count']} waypoints")
         else:
-            st.info("📊 No session activity recorded today")
+            st.info("📊 No waypoint activity recorded in this period")
     
     # Load and display logs
     st.subheader("📋 Activity Logs")

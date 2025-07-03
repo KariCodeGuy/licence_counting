@@ -695,6 +695,83 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
+    def get_top_users_by_sessions(self, start_date=None, end_date=None):
+        """Get top 3 users by session activity in app_log, filtered by date range"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        try:
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = f"AND al.timestamp BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                date_filter = f"AND al.timestamp >= '{start_date} 00:00:00'"
+            elif end_date:
+                date_filter = f"AND al.timestamp <= '{end_date} 23:59:59'"
+            query = f'''
+                SELECT 
+                    al.user_id,
+                    CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+                    u.email,
+                    COUNT(DISTINCT al.session_id) AS session_count
+                FROM fido1.app_log al
+                LEFT JOIN fido1.users_portal u ON al.user_id = u.id
+                WHERE al.user_id IS NOT NULL {date_filter}
+                GROUP BY al.user_id, user_name, u.email
+                ORDER BY session_count DESC
+                LIMIT 3
+            '''
+            df = pd.read_sql(query, connection)
+            return df
+        except Exception as e:
+            print(f"Error fetching top users by sessions: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_top_users_by_waypoints(self, start_date=None, end_date=None):
+        """Get top 3 users by waypoint activity in fidoapi_waypoint_logs, filtered by date range"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        try:
+            # Check if waypoint table is accessible
+            try:
+                test_cursor = connection.cursor()
+                test_cursor.execute("SELECT 1 FROM fido1.fidoapi_waypoint_logs LIMIT 1")
+                test_cursor.close()
+            except Exception:
+                return pd.DataFrame()
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = f"AND fwl.datetime BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                date_filter = f"AND fwl.datetime >= '{start_date} 00:00:00'"
+            elif end_date:
+                date_filter = f"AND fwl.datetime <= '{end_date} 23:59:59'"
+            query = f'''
+                SELECT 
+                    fwl.user_id,
+                    fwl.user_name,
+                    u.email,
+                    COUNT(*) AS waypoint_count
+                FROM fido1.fidoapi_waypoint_logs fwl
+                LEFT JOIN fido1.users_portal u ON fwl.user_id = u.id
+                WHERE fwl.user_id IS NOT NULL {date_filter}
+                GROUP BY fwl.user_id, fwl.user_name, u.email
+                ORDER BY waypoint_count DESC
+                LIMIT 3
+            '''
+            df = pd.read_sql(query, connection)
+            return df
+        except Exception as e:
+            print(f"Error fetching top users by waypoints: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
 # Example usage for when you're ready to switch from mock data:
 """
 # In your app.py, replace the generate_mock_data() function with:
