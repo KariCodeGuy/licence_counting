@@ -882,8 +882,8 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
-    def get_top_users_by_sessions(self, start_date=None, end_date=None):
-        """Get top 3 users by session activity in app_log, filtered by date range"""
+    def get_top_users_by_sessions(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None):
+        """Get top 3 users by session activity in app_log, filtered by date range and other filters"""
         connection = self.get_connection()
         if not connection:
             return pd.DataFrame()
@@ -895,6 +895,19 @@ class DatabaseConnection:
                 date_filter = f"AND al.timestamp >= '{start_date} 00:00:00'"
             elif end_date:
                 date_filter = f"AND al.timestamp <= '{end_date} 23:59:59'"
+            
+            user_filter = ""
+            if user_id:
+                user_filter = f"AND al.user_id = {user_id}"
+            
+            company_filter = ""
+            if company_id:
+                company_filter = f"AND u.company_id = {company_id}"
+            
+            partner_filter = ""
+            if partner_id:
+                partner_filter = f"AND u.partner_id = {partner_id}"
+            
             query = f'''
                 SELECT 
                     al.user_id,
@@ -903,7 +916,7 @@ class DatabaseConnection:
                     COUNT(DISTINCT al.session_id) AS session_count
                 FROM fido1.app_log al
                 LEFT JOIN fido1.users_portal u ON al.user_id = u.id
-                WHERE al.user_id IS NOT NULL {date_filter}
+                WHERE al.user_id IS NOT NULL {date_filter} {user_filter} {company_filter} {partner_filter}
                 GROUP BY al.user_id, user_name, u.email
                 ORDER BY session_count DESC
                 LIMIT 3
@@ -917,8 +930,8 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
-    def get_top_users_by_waypoints(self, start_date=None, end_date=None):
-        """Get top 3 users by waypoint activity in fido_way.waypoint_logs, filtered by date range"""
+    def get_top_users_by_waypoints(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None):
+        """Get top 3 users by waypoint activity in fido_way.waypoint_logs, filtered by date range and other filters"""
         connection = self.get_connection()
         if not connection:
             return pd.DataFrame()
@@ -938,6 +951,19 @@ class DatabaseConnection:
                 date_filter = f"AND wl.datetime >= '{start_date} 00:00:00'"
             elif end_date:
                 date_filter = f"AND wl.datetime <= '{end_date} 23:59:59'"
+            
+            user_filter = ""
+            if user_id:
+                user_filter = f"AND wl.user_id = {user_id}"
+            
+            company_filter = ""
+            if company_id:
+                company_filter = f"AND u.company_id = {company_id}"
+            
+            partner_filter = ""
+            if partner_id:
+                partner_filter = f"AND u.partner_id = {partner_id}"
+            
             query = f'''
                 SELECT 
                     wl.user_id,
@@ -946,7 +972,7 @@ class DatabaseConnection:
                     COUNT(*) AS waypoint_count
                 FROM fido_way.waypoint_logs wl
                 LEFT JOIN fido1.users_portal u ON wl.user_id = u.id
-                WHERE wl.user_id IS NOT NULL {date_filter}
+                WHERE wl.user_id IS NOT NULL {date_filter} {user_filter} {company_filter} {partner_filter}
                 GROUP BY wl.user_id, user_name, u.email
                 ORDER BY waypoint_count DESC
                 LIMIT 3

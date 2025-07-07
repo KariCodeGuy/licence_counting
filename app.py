@@ -1010,12 +1010,25 @@ if st.session_state.selected_dashboard == 'System Logs':
     st.subheader("🏆 Today's Top Performers")
     col1, col2 = st.columns(2)
 
-    # Use the same date_range as the log filters
-    top_users_sessions = db.get_top_users_by_sessions(start_date=date_range[0], end_date=date_range[1])
-    top_users_waypoints = db.get_top_users_by_waypoints(start_date=date_range[0], end_date=date_range[1])
+    # Use the same filters as the log filters
+    top_users_sessions = db.get_top_users_by_sessions(
+        start_date=date_range[0], 
+        end_date=date_range[1],
+        user_id=user_id,
+        company_id=company_id,
+        partner_id=partner_id
+    )
+    top_users_waypoints = db.get_top_users_by_waypoints(
+        start_date=date_range[0], 
+        end_date=date_range[1],
+        user_id=user_id,
+        company_id=company_id,
+        partner_id=partner_id
+    )
 
     with col1:
         st.markdown("#### 💻 Top 3 Users by Sessions")
+        st.caption("📊 *Filtered by selected date range, user, company, and partner*")
         if not top_users_sessions.empty:
             for idx, row in top_users_sessions.iterrows():
                 with st.container():
@@ -1031,6 +1044,7 @@ if st.session_state.selected_dashboard == 'System Logs':
 
     with col2:
         st.markdown("#### 📍 Top 3 Users by Waypoints")
+        st.caption("📊 *Filtered by selected date range, user, company, and partner*")
         if not top_users_waypoints.empty:
             for idx, row in top_users_waypoints.iterrows():
                 with st.container():
