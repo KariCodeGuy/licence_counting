@@ -1006,6 +1006,32 @@ if st.session_state.selected_dashboard == 'System Logs':
             if st.button("🔄 Refresh Logs", type="primary", use_container_width=True, key="logs_refresh"):
                 st.rerun()
     
+    # Prepare filter parameters first
+    start_date = date_range[0] if len(date_range) > 0 else None
+    end_date = date_range[1] if len(date_range) > 1 else None
+    
+    user_id = None
+    if selected_user != "All Users":
+        user_name = selected_user.split(" (")[0]
+        for user in filter_options['users']:
+            if user['name'] == user_name:
+                user_id = user['id']
+                break
+    
+    company_id = None
+    if selected_company != "All Companies":
+        for company in filter_options['companies']:
+            if company['name'] == selected_company:
+                company_id = company['id']
+                break
+    
+    partner_id = None
+    if selected_partner != "All Partners":
+        for partner in filter_options['partners']:
+            if partner['name'] == selected_partner:
+                partner_id = partner['id']
+                break
+    
     # Ranking Panels
     st.subheader("🏆 Today's Top Performers")
     col1, col2 = st.columns(2)
@@ -1063,32 +1089,6 @@ if st.session_state.selected_dashboard == 'System Logs':
     
     # Load and display logs
     st.subheader("📋 Activity Logs")
-    
-    # Prepare filter parameters
-    start_date = date_range[0] if len(date_range) > 0 else None
-    end_date = date_range[1] if len(date_range) > 1 else None
-    
-    user_id = None
-    if selected_user != "All Users":
-        user_name = selected_user.split(" (")[0]
-        for user in filter_options['users']:
-            if user['name'] == user_name:
-                user_id = user['id']
-                break
-    
-    company_id = None
-    if selected_company != "All Companies":
-        for company in filter_options['companies']:
-            if company['name'] == selected_company:
-                company_id = company['id']
-                break
-    
-    partner_id = None
-    if selected_partner != "All Partners":
-        for partner in filter_options['partners']:
-            if partner['name'] == selected_partner:
-                partner_id = partner['id']
-                break
     
     log_source = None
     if selected_log_source != "All Sources":
