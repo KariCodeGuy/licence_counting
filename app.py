@@ -1025,6 +1025,9 @@ if st.session_state.selected_dashboard == 'System Logs':
         company_id=company_id,
         partner_id=partner_id
     )
+    
+    # Debug: Show what filters are being applied
+    st.caption(f"🔍 **Debug Info:** Date range: {date_range[0]} to {date_range[1]}, User: {user_id}, Company: {company_id}, Partner: {partner_id}")
 
     with col1:
         st.markdown("#### 💻 Top 3 Users by Sessions")
