@@ -363,6 +363,190 @@ class DatabaseConnection:
             if connection.is_connected():
                 connection.close()
 
+    def get_portal_logs(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None):
+        """Fetch logs from portal_logs table only"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # Build filters
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = f"AND CONCAT(pl.date, ' ', pl.time) BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                date_filter = f"AND CONCAT(pl.date, ' ', pl.time) >= '{start_date} 00:00:00'"
+            elif end_date:
+                date_filter = f"AND CONCAT(pl.date, ' ', pl.time) <= '{end_date} 23:59:59'"
+            
+            company_filter = ""
+            if company_id:
+                company_filter = f"AND pl.company_id = {company_id}"
+            
+            partner_filter = ""
+            if partner_id:
+                partner_filter = f"AND pl.partner_id = {partner_id}"
+            
+            query = f'''
+            SELECT 
+                CONCAT(pl.date, ' ', pl.time) as timestamp,
+                CONVERT(pl.name USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_name,
+                CONVERT(pl.email USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_email,
+                CONVERT(pl.action USING utf8mb4) COLLATE utf8mb4_unicode_ci as action,
+                CONVERT(pl.status USING utf8mb4) COLLATE utf8mb4_unicode_ci as status,
+                CONVERT(pl.notes USING utf8mb4) COLLATE utf8mb4_unicode_ci as notes,
+                'portal_logs' COLLATE utf8mb4_unicode_ci as log_source,
+                CONVERT(c.company_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as company_name,
+                CONVERT(p.partner_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as partner_name,
+                NULL as session_id,
+                NULL as waypoint_id,
+                NULL as waypoint_name,
+                CONVERT(pl.object_data USING utf8mb4) COLLATE utf8mb4_unicode_ci as object_data,
+                CONVERT(JSON_OBJECT('company_id', pl.company_id, 'partner_id', pl.partner_id, 'branch_id', pl.branch_id) USING utf8mb4) COLLATE utf8mb4_unicode_ci as metadata
+            FROM fido1.portal_logs pl
+            LEFT JOIN fido1.companies c ON pl.company_id = c.id
+            LEFT JOIN fido1.partners p ON pl.partner_id = p.id
+            WHERE 1=1 {date_filter} {company_filter} {partner_filter}
+            ORDER BY CONCAT(pl.date, ' ', pl.time) DESC
+            LIMIT 1000
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            print(f"Error fetching portal logs: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_app_logs(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None):
+        """Fetch logs from app_log table only"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # Build filters
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = f"AND al.timestamp BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                date_filter = f"AND al.timestamp >= '{start_date} 00:00:00'"
+            elif end_date:
+                date_filter = f"AND al.timestamp <= '{end_date} 23:59:59'"
+            
+            user_filter = ""
+            if user_id:
+                user_filter = f"AND al.user_id = {user_id}"
+            
+            company_filter = ""
+            if company_id:
+                company_filter = f"AND u.company_id = {company_id}"
+            
+            partner_filter = ""
+            if partner_id:
+                partner_filter = f"AND u.partner_id = {partner_id}"
+            
+            query = f'''
+            SELECT 
+                al.timestamp,
+                CONVERT(CONCAT(u.first_name, ' ', u.last_name) USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_name,
+                CONVERT(u.email USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_email,
+                CONVERT(al.action USING utf8mb4) COLLATE utf8mb4_unicode_ci as action,
+                CONVERT(al.status USING utf8mb4) COLLATE utf8mb4_unicode_ci as status,
+                CONVERT(al.notes USING utf8mb4) COLLATE utf8mb4_unicode_ci as notes,
+                'app_log' COLLATE utf8mb4_unicode_ci as log_source,
+                CONVERT(c.company_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as company_name,
+                CONVERT(p.partner_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as partner_name,
+                al.session_id,
+                al.waypoint_id,
+                NULL as waypoint_name,
+                NULL as object_data,
+                CONVERT(JSON_OBJECT('user_id', al.user_id, 'dma_id', al.dma_id) USING utf8mb4) COLLATE utf8mb4_unicode_ci as metadata
+            FROM fido1.app_log al
+            LEFT JOIN fido1.users_portal u ON al.user_id = u.id
+            LEFT JOIN fido1.companies c ON u.company_id = c.id
+            LEFT JOIN fido1.partners p ON u.partner_id = p.id
+            WHERE 1=1 {date_filter} {user_filter} {company_filter} {partner_filter}
+            ORDER BY al.timestamp DESC
+            LIMIT 1000
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            print(f"Error fetching app logs: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
+    def get_waypoint_logs(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None):
+        """Fetch logs from fido_way.waypoint_logs table only"""
+        connection = self.get_connection()
+        if not connection:
+            return pd.DataFrame()
+        
+        try:
+            # Build filters
+            date_filter = ""
+            if start_date and end_date:
+                date_filter = f"AND wl.datetime BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            elif start_date:
+                date_filter = f"AND wl.datetime >= '{start_date} 00:00:00'"
+            elif end_date:
+                date_filter = f"AND wl.datetime <= '{end_date} 23:59:59'"
+            
+            user_filter = ""
+            if user_id:
+                user_filter = f"AND wl.user_id = {user_id}"
+            
+            company_filter = ""
+            if company_id:
+                company_filter = f"AND u.company_id = {company_id}"
+            
+            partner_filter = ""
+            if partner_id:
+                partner_filter = f"AND u.partner_id = {partner_id}"
+            
+            query = f'''
+            SELECT 
+                wl.datetime as timestamp,
+                CONVERT(CONCAT(u.first_name, ' ', u.last_name) USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_name,
+                CONVERT(u.email USING utf8mb4) COLLATE utf8mb4_unicode_ci as user_email,
+                CONVERT(CONCAT('Status Change: ', wl.status_changed_from_id, '→', wl.status_changed_to_id) USING utf8mb4) COLLATE utf8mb4_unicode_ci as action,
+                'completed' COLLATE utf8mb4_unicode_ci as status,
+                CONVERT(wl.notes USING utf8mb4) COLLATE utf8mb4_unicode_ci as notes,
+                'waypoint_logs' COLLATE utf8mb4_unicode_ci as log_source,
+                CONVERT(c.company_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as company_name,
+                CONVERT(p.partner_name USING utf8mb4) COLLATE utf8mb4_unicode_ci as partner_name,
+                NULL as session_id,
+                wl.waypoint_id,
+                NULL as waypoint_name,
+                NULL as object_data,
+                CONVERT(JSON_OBJECT('user_id', wl.user_id) USING utf8mb4) COLLATE utf8mb4_unicode_ci as metadata
+            FROM fido_way.waypoint_logs wl
+            LEFT JOIN fido1.users_portal u ON wl.user_id = u.id
+            LEFT JOIN fido1.companies c ON u.company_id = c.id
+            LEFT JOIN fido1.partners p ON u.partner_id = p.id
+            WHERE 1=1 {date_filter} {user_filter} {company_filter} {partner_filter}
+            ORDER BY wl.datetime DESC
+            LIMIT 1000
+            '''
+            
+            df = pd.read_sql(query, connection)
+            return df
+            
+        except Exception as e:
+            print(f"Error fetching waypoint logs: {e}")
+            return pd.DataFrame()
+        finally:
+            if connection.is_connected():
+                connection.close()
+
     def get_unified_logs(self, start_date=None, end_date=None, user_id=None, company_id=None, partner_id=None, log_type=None):
         """Fetch unified logs from portal_logs, app_log, and fido_way.waypoint_logs tables"""
         connection = self.get_connection()
@@ -483,6 +667,7 @@ class DatabaseConnection:
                     # Test if waypoint table is accessible
                     test_cursor = connection.cursor()
                     test_cursor.execute("SELECT 1 FROM fido_way.waypoint_logs LIMIT 1")
+                    _ = test_cursor.fetchall()  # Fetch the result to avoid 'Unread result found'
                     test_cursor.close()
                     
                     # If we get here, the table is accessible
@@ -538,6 +723,7 @@ class DatabaseConnection:
             ) unified_logs
             WHERE 1=1 {log_type_filter}
             ORDER BY datetime DESC
+            LIMIT 1000
             '''
             
             df = pd.read_sql(query, connection)
@@ -670,6 +856,7 @@ class DatabaseConnection:
             try:
                 test_cursor = connection.cursor()
                 test_cursor.execute("SELECT 1 FROM fido_way.waypoint_logs LIMIT 1")
+                _ = test_cursor.fetchall()  # Fetch the result to avoid 'Unread result found'
                 test_cursor.close()
                 log_types.append('Waypoint')
             except Exception:
@@ -740,6 +927,7 @@ class DatabaseConnection:
             try:
                 test_cursor = connection.cursor()
                 test_cursor.execute("SELECT 1 FROM fido_way.waypoint_logs LIMIT 1")
+                _ = test_cursor.fetchall()  # Fetch the result to avoid 'Unread result found'
                 test_cursor.close()
             except Exception:
                 return pd.DataFrame()

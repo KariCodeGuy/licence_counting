@@ -994,12 +994,12 @@ if st.session_state.selected_dashboard == 'System Logs':
             )
         
         with col3:
-            # Log type filter
-            log_type_options = ["All Types"] + filter_options['log_types']
-            selected_log_type = st.selectbox(
-                "📝 Log Type",
-                options=log_type_options,
-                help="Filter by log source"
+            # Log source dropdown (instead of filter)
+            log_source_options = ["All Sources"] + filter_options['log_types']
+            selected_log_source = st.selectbox(
+                "📝 Log Source",
+                options=log_source_options,
+                help="Select which log source to view"
             )
             
             # Refresh button
@@ -1073,19 +1073,45 @@ if st.session_state.selected_dashboard == 'System Logs':
                 partner_id = partner['id']
                 break
     
-    log_type = None
-    if selected_log_type != "All Types":
-        log_type = selected_log_type
+    log_source = None
+    if selected_log_source != "All Sources":
+        log_source = selected_log_source
     
-    # Load logs data
-    logs_df = db.get_unified_logs(
-        start_date=start_date,
-        end_date=end_date,
-        user_id=user_id,
-        company_id=company_id,
-        partner_id=partner_id,
-        log_type=log_type
-    )
+    # Load logs data based on selected source
+    if selected_log_source == "All Sources":
+        logs_df = db.get_unified_logs(
+            start_date=start_date,
+            end_date=end_date,
+            user_id=user_id,
+            company_id=company_id,
+            partner_id=partner_id
+        )
+    elif selected_log_source == "Portal":
+        logs_df = db.get_portal_logs(
+            start_date=start_date,
+            end_date=end_date,
+            user_id=user_id,
+            company_id=company_id,
+            partner_id=partner_id
+        )
+    elif selected_log_source == "App":
+        logs_df = db.get_app_logs(
+            start_date=start_date,
+            end_date=end_date,
+            user_id=user_id,
+            company_id=company_id,
+            partner_id=partner_id
+        )
+    elif selected_log_source == "Waypoint":
+        logs_df = db.get_waypoint_logs(
+            start_date=start_date,
+            end_date=end_date,
+            user_id=user_id,
+            company_id=company_id,
+            partner_id=partner_id
+        )
+    else:
+        logs_df = pd.DataFrame()
     
     # Display logs table
     if not logs_df.empty:
@@ -1093,11 +1119,20 @@ if st.session_state.selected_dashboard == 'System Logs':
         logs_df['timestamp'] = pd.to_datetime(logs_df['timestamp'])
         
         # Add log type icons
-        logs_df['log_type_icon'] = logs_df['log_source'].map({
-            'portal_logs': '🌐',
-            'app_log': '📱',
-            'waypoint_logs': '📍'
-        })
+        if 'log_source' in logs_df.columns:
+            logs_df['log_type_icon'] = logs_df['log_source'].map({
+                'portal_logs': '🌐',
+                'app_log': '📱',
+                'waypoint_logs': '📍'
+            })
+        else:
+            # If no log_source column, use a default icon based on selected source
+            default_icon = {
+                'Portal': '🌐',
+                'App': '📱',
+                'Waypoint': '📍'
+            }.get(selected_log_source, '📋')
+            logs_df['log_type_icon'] = default_icon
         
         # Display the logs table
         st.dataframe(
@@ -1131,17 +1166,25 @@ if st.session_state.selected_dashboard == 'System Logs':
             st.metric("Unique Users", f"{unique_users:,}")
         
         with col3:
-            log_types = logs_df['log_source'].value_counts()
-            portal_logs = log_types.get('portal_logs', 0)
-            st.metric("Portal Logs", f"{portal_logs:,}")
+            if 'log_source' in logs_df.columns:
+                log_types = logs_df['log_source'].value_counts()
+                portal_logs = log_types.get('portal_logs', 0)
+                st.metric("Portal Logs", f"{portal_logs:,}")
+            else:
+                st.metric("Portal Logs", "0")
         
         with col4:
-            app_logs = log_types.get('app_log', 0)
-            st.metric("App Logs", f"{app_logs:,}")
+            if 'log_source' in logs_df.columns:
+                app_logs = log_types.get('app_log', 0)
+                waypoint_logs = log_types.get('waypoint_logs', 0)
+                st.metric("App/Waypoint Logs", f"{app_logs + waypoint_logs:,}")
+            else:
+                st.metric("App/Waypoint Logs", "0")
         
         # Log type distribution chart
-        if len(log_types) > 0:
+        if 'log_source' in logs_df.columns and len(logs_df['log_source'].value_counts()) > 0:
             st.subheader("📈 Log Type Distribution")
+            log_types = logs_df['log_source'].value_counts()
             fig_log_types = px.pie(
                 values=log_types.values,
                 names=log_types.index,
