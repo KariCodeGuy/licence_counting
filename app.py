@@ -1253,7 +1253,8 @@ if st.session_state.selected_dashboard == 'System Logs':
         
         # Activity timeline
         st.subheader("⏰ Activity Timeline")
-        timeline_df = filtered_logs_df.groupby(filtered_logs_df['timestamp'].dt.date).size().reset_index(name='count')
+        # Use display_df which has the converted timestamp
+        timeline_df = display_df.groupby(display_df['timestamp'].dt.date).size().reset_index(name='count')
         timeline_df.columns = ['date', 'activity_count']
         
         if not timeline_df.empty:
