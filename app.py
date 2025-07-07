@@ -1006,7 +1006,7 @@ if st.session_state.selected_dashboard == 'System Logs':
             if st.button("🔄 Refresh Logs", type="primary", use_container_width=True, key="logs_refresh"):
                 st.rerun()
     
-    # Prepare filter parameters first
+    # Prepare filter parameters for Python filtering
     start_date = date_range[0] if len(date_range) > 0 else None
     end_date = date_range[1] if len(date_range) > 1 else None
     
@@ -1032,28 +1032,96 @@ if st.session_state.selected_dashboard == 'System Logs':
                 partner_id = partner['id']
                 break
     
+    # Cache key for logs data - only changes when date range changes
+    logs_cache_key = f"logs_{start_date}_{end_date}"
+    
+    # Load logs data with caching - only re-query when dates change
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def load_logs_data(_start_date, _end_date, _log_source):
+        """Load logs data with date filtering only - other filters applied in Python"""
+        if _log_source == "All Sources":
+            return db.get_unified_logs(start_date=_start_date, end_date=_end_date)
+        elif _log_source == "Portal":
+            return db.get_portal_logs(start_date=_start_date, end_date=_end_date)
+        elif _log_source == "App":
+            return db.get_app_logs(start_date=_start_date, end_date=_end_date)
+        elif _log_source == "Waypoint":
+            return db.get_waypoint_logs(start_date=_start_date, end_date=_end_date)
+        else:
+            return pd.DataFrame()
+    
+    # Load the base logs data (only filtered by date)
+    base_logs_df = load_logs_data(start_date, end_date, selected_log_source)
+    
+    # Apply Python filters to the base data
+    filtered_logs_df = base_logs_df.copy()
+    
+    if not filtered_logs_df.empty:
+        # Apply user filter
+        if user_id is not None:
+            # For app_log and waypoint_logs, we have user_id in metadata
+            if selected_log_source == "App":
+                filtered_logs_df = filtered_logs_df[filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)]
+            elif selected_log_source == "Waypoint":
+                filtered_logs_df = filtered_logs_df[filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)]
+            # For portal_logs, we need to check by user name/email
+            elif selected_log_source == "Portal":
+                user_name = selected_user.split(" (")[0]
+                user_email = selected_user.split(" (")[1].rstrip(")")
+                filtered_logs_df = filtered_logs_df[
+                    (filtered_logs_df['user_name'] == user_name) | 
+                    (filtered_logs_df['user_email'] == user_email)
+                ]
+        
+        # Apply company filter
+        if company_id is not None:
+            company_name = selected_company
+            filtered_logs_df = filtered_logs_df[filtered_logs_df['company_name'] == company_name]
+        
+        # Apply partner filter
+        if partner_id is not None:
+            partner_name = selected_partner
+            filtered_logs_df = filtered_logs_df[filtered_logs_df['partner_name'] == partner_name]
+    
+    # Calculate top performers from the filtered data
+    def calculate_top_performers(logs_df, performance_type):
+        """Calculate top performers from filtered logs data"""
+        if logs_df.empty:
+            return pd.DataFrame()
+        
+        if performance_type == "sessions":
+            # Count unique sessions per user
+            if 'session_id' in logs_df.columns:
+                session_counts = logs_df[logs_df['session_id'].notna()].groupby('user_name').agg({
+                    'session_id': 'nunique',
+                    'user_email': 'first'
+                }).reset_index()
+                session_counts.columns = ['user_name', 'session_count', 'email']
+                return session_counts.nlargest(3, 'session_count')
+        
+        elif performance_type == "waypoints":
+            # Count waypoint activities per user
+            if 'waypoint_id' in logs_df.columns:
+                waypoint_counts = logs_df[logs_df['waypoint_id'].notna()].groupby('user_name').agg({
+                    'waypoint_id': 'count',
+                    'user_email': 'first'
+                }).reset_index()
+                waypoint_counts.columns = ['user_name', 'waypoint_count', 'email']
+                return waypoint_counts.nlargest(3, 'waypoint_count')
+        
+        return pd.DataFrame()
+    
+    # Calculate top performers from filtered data
+    top_users_sessions = calculate_top_performers(filtered_logs_df, "sessions")
+    top_users_waypoints = calculate_top_performers(filtered_logs_df, "waypoints")
+    
     # Ranking Panels
     st.subheader("🏆 Today's Top Performers")
     col1, col2 = st.columns(2)
 
-    # Use the same filters as the log filters
-    top_users_sessions = db.get_top_users_by_sessions(
-        start_date=date_range[0], 
-        end_date=date_range[1],
-        user_id=user_id,
-        company_id=company_id,
-        partner_id=partner_id
-    )
-    top_users_waypoints = db.get_top_users_by_waypoints(
-        start_date=date_range[0], 
-        end_date=date_range[1],
-        user_id=user_id,
-        company_id=company_id,
-        partner_id=partner_id
-    )
-    
     # Debug: Show what filters are being applied
     st.caption(f"🔍 **Debug Info:** Date range: {date_range[0]} to {date_range[1]}, User: {user_id}, Company: {company_id}, Partner: {partner_id}")
+    st.caption(f"📊 **Data Source:** {len(base_logs_df)} total records, {len(filtered_logs_df)} after filtering")
 
     with col1:
         st.markdown("#### 💻 Top 3 Users by Sessions")
@@ -1090,54 +1158,14 @@ if st.session_state.selected_dashboard == 'System Logs':
     # Load and display logs
     st.subheader("📋 Activity Logs")
     
-    log_source = None
-    if selected_log_source != "All Sources":
-        log_source = selected_log_source
-    
-    # Load logs data based on selected source
-    if selected_log_source == "All Sources":
-        logs_df = db.get_unified_logs(
-            start_date=start_date,
-            end_date=end_date,
-            user_id=user_id,
-            company_id=company_id,
-            partner_id=partner_id
-        )
-    elif selected_log_source == "Portal":
-        logs_df = db.get_portal_logs(
-            start_date=start_date,
-            end_date=end_date,
-            user_id=user_id,
-            company_id=company_id,
-            partner_id=partner_id
-        )
-    elif selected_log_source == "App":
-        logs_df = db.get_app_logs(
-            start_date=start_date,
-            end_date=end_date,
-            user_id=user_id,
-            company_id=company_id,
-            partner_id=partner_id
-        )
-    elif selected_log_source == "Waypoint":
-        logs_df = db.get_waypoint_logs(
-            start_date=start_date,
-            end_date=end_date,
-            user_id=user_id,
-            company_id=company_id,
-            partner_id=partner_id
-        )
-    else:
-        logs_df = pd.DataFrame()
-    
     # Display logs table
-    if not logs_df.empty:
+    if not filtered_logs_df.empty:
         # Convert timestamp to datetime for better display
-        logs_df['timestamp'] = pd.to_datetime(logs_df['timestamp'])
+        filtered_logs_df['timestamp'] = pd.to_datetime(filtered_logs_df['timestamp'])
         
         # Add log type icons
-        if 'log_source' in logs_df.columns:
-            logs_df['log_type_icon'] = logs_df['log_source'].map({
+        if 'log_source' in filtered_logs_df.columns:
+            filtered_logs_df['log_type_icon'] = filtered_logs_df['log_source'].map({
                 'portal_logs': '🌐',
                 'app_log': '📱',
                 'waypoint_logs': '📍'
@@ -1149,11 +1177,11 @@ if st.session_state.selected_dashboard == 'System Logs':
                 'App': '📱',
                 'Waypoint': '📍'
             }.get(selected_log_source, '📋')
-            logs_df['log_type_icon'] = default_icon
+            filtered_logs_df['log_type_icon'] = default_icon
         
         # Display the logs table
         st.dataframe(
-            logs_df[['timestamp', 'log_type_icon', 'user_name', 'action', 'status', 'company_name', 'partner_name', 'session_id', 'waypoint_id', 'notes']],
+            filtered_logs_df[['timestamp', 'log_type_icon', 'user_name', 'action', 'status', 'company_name', 'partner_name', 'session_id', 'waypoint_id', 'notes']],
             use_container_width=True,
             column_config={
                 'timestamp': st.column_config.DatetimeColumn('Timestamp', format='DD-MM-YYYY HH:mm:ss'),
@@ -1175,23 +1203,23 @@ if st.session_state.selected_dashboard == 'System Logs':
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total_logs = len(logs_df)
+            total_logs = len(filtered_logs_df)
             st.metric("Total Logs", f"{total_logs:,}")
         
         with col2:
-            unique_users = logs_df['user_name'].nunique()
+            unique_users = filtered_logs_df['user_name'].nunique()
             st.metric("Unique Users", f"{unique_users:,}")
         
         with col3:
-            if 'log_source' in logs_df.columns:
-                log_types = logs_df['log_source'].value_counts()
+            if 'log_source' in filtered_logs_df.columns:
+                log_types = filtered_logs_df['log_source'].value_counts()
                 portal_logs = log_types.get('portal_logs', 0)
                 st.metric("Portal Logs", f"{portal_logs:,}")
             else:
                 st.metric("Portal Logs", "0")
         
         with col4:
-            if 'log_source' in logs_df.columns:
+            if 'log_source' in filtered_logs_df.columns:
                 app_logs = log_types.get('app_log', 0)
                 waypoint_logs = log_types.get('waypoint_logs', 0)
                 st.metric("App/Waypoint Logs", f"{app_logs + waypoint_logs:,}")
@@ -1199,9 +1227,9 @@ if st.session_state.selected_dashboard == 'System Logs':
                 st.metric("App/Waypoint Logs", "0")
         
         # Log type distribution chart
-        if 'log_source' in logs_df.columns and len(logs_df['log_source'].value_counts()) > 0:
+        if 'log_source' in filtered_logs_df.columns and len(filtered_logs_df['log_source'].value_counts()) > 0:
             st.subheader("📈 Log Type Distribution")
-            log_types = logs_df['log_source'].value_counts()
+            log_types = filtered_logs_df['log_source'].value_counts()
             fig_log_types = px.pie(
                 values=log_types.values,
                 names=log_types.index,
@@ -1216,7 +1244,7 @@ if st.session_state.selected_dashboard == 'System Logs':
         
         # Activity timeline
         st.subheader("⏰ Activity Timeline")
-        timeline_df = logs_df.groupby(logs_df['timestamp'].dt.date).size().reset_index(name='count')
+        timeline_df = filtered_logs_df.groupby(filtered_logs_df['timestamp'].dt.date).size().reset_index(name='count')
         timeline_df.columns = ['date', 'activity_count']
         
         if not timeline_df.empty:
