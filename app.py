@@ -1035,7 +1035,7 @@ if st.session_state.selected_dashboard == 'System Logs':
     # Cache key for logs data - only changes when date range changes
     logs_cache_key = f"logs_{start_date}_{end_date}"
     
-    # Load logs data with caching - only re-query when dates change
+    # Load the base logs data (only filtered by date) - cached function
     @st.cache_data(ttl=300)  # Cache for 5 minutes
     def load_logs_data(_start_date, _end_date, _log_source):
         """Load logs data with date filtering only - other filters applied in Python"""
@@ -1053,35 +1053,37 @@ if st.session_state.selected_dashboard == 'System Logs':
     # Load the base logs data (only filtered by date)
     base_logs_df = load_logs_data(start_date, end_date, selected_log_source)
     
-    # Apply Python filters to the base data
+    # Apply Python filters to the base data - optimized for performance
     filtered_logs_df = base_logs_df.copy()
     
     if not filtered_logs_df.empty:
+        # Apply filters efficiently - use boolean indexing
+        mask = pd.Series([True] * len(filtered_logs_df), index=filtered_logs_df.index)
+        
         # Apply user filter
         if user_id is not None:
-            # For app_log and waypoint_logs, we have user_id in metadata
             if selected_log_source == "App":
-                filtered_logs_df = filtered_logs_df[filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)]
+                mask &= filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)
             elif selected_log_source == "Waypoint":
-                filtered_logs_df = filtered_logs_df[filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)]
-            # For portal_logs, we need to check by user name/email
+                mask &= filtered_logs_df['metadata'].str.contains(f'"user_id": {user_id}', na=False)
             elif selected_log_source == "Portal":
                 user_name = selected_user.split(" (")[0]
                 user_email = selected_user.split(" (")[1].rstrip(")")
-                filtered_logs_df = filtered_logs_df[
-                    (filtered_logs_df['user_name'] == user_name) | 
-                    (filtered_logs_df['user_email'] == user_email)
-                ]
+                mask &= ((filtered_logs_df['user_name'] == user_name) | 
+                        (filtered_logs_df['user_email'] == user_email))
         
         # Apply company filter
         if company_id is not None:
             company_name = selected_company
-            filtered_logs_df = filtered_logs_df[filtered_logs_df['company_name'] == company_name]
+            mask &= filtered_logs_df['company_name'] == company_name
         
         # Apply partner filter
         if partner_id is not None:
             partner_name = selected_partner
-            filtered_logs_df = filtered_logs_df[filtered_logs_df['partner_name'] == partner_name]
+            mask &= filtered_logs_df['partner_name'] == partner_name
+        
+        # Apply the combined mask
+        filtered_logs_df = filtered_logs_df[mask]
     
     # Calculate top performers from the filtered data
     def calculate_top_performers(logs_df, performance_type):
@@ -1122,6 +1124,10 @@ if st.session_state.selected_dashboard == 'System Logs':
     # Debug: Show what filters are being applied
     st.caption(f"🔍 **Debug Info:** Date range: {date_range[0]} to {date_range[1]}, User: {user_id}, Company: {company_id}, Partner: {partner_id}")
     st.caption(f"📊 **Data Source:** {len(base_logs_df)} total records, {len(filtered_logs_df)} after filtering")
+    
+    # Performance monitoring
+    if len(base_logs_df) > 500:
+        st.warning(f"⚠️ **Performance Note:** Large dataset detected ({len(base_logs_df)} records). Consider reducing date range for faster filtering.")
 
     with col1:
         st.markdown("#### 💻 Top 3 Users by Sessions")
@@ -1160,12 +1166,15 @@ if st.session_state.selected_dashboard == 'System Logs':
     
     # Display logs table
     if not filtered_logs_df.empty:
+        # Create a copy to avoid SettingWithCopyWarning
+        display_df = filtered_logs_df.copy()
+        
         # Convert timestamp to datetime for better display
-        filtered_logs_df['timestamp'] = pd.to_datetime(filtered_logs_df['timestamp'])
+        display_df['timestamp'] = pd.to_datetime(display_df['timestamp'])
         
         # Add log type icons
-        if 'log_source' in filtered_logs_df.columns:
-            filtered_logs_df['log_type_icon'] = filtered_logs_df['log_source'].map({
+        if 'log_source' in display_df.columns:
+            display_df['log_type_icon'] = display_df['log_source'].map({
                 'portal_logs': '🌐',
                 'app_log': '📱',
                 'waypoint_logs': '📍'
@@ -1177,11 +1186,11 @@ if st.session_state.selected_dashboard == 'System Logs':
                 'App': '📱',
                 'Waypoint': '📍'
             }.get(selected_log_source, '📋')
-            filtered_logs_df['log_type_icon'] = default_icon
+            display_df['log_type_icon'] = default_icon
         
         # Display the logs table
         st.dataframe(
-            filtered_logs_df[['timestamp', 'log_type_icon', 'user_name', 'action', 'status', 'company_name', 'partner_name', 'session_id', 'waypoint_id', 'notes']],
+            display_df[['timestamp', 'log_type_icon', 'user_name', 'action', 'status', 'company_name', 'partner_name', 'session_id', 'waypoint_id', 'notes']],
             use_container_width=True,
             column_config={
                 'timestamp': st.column_config.DatetimeColumn('Timestamp', format='DD-MM-YYYY HH:mm:ss'),
